@@ -1,0 +1,14 @@
+services:
+  - type: web
+    runtime: node
+    name: pirataoskin
+    plan: free
+    buildCommand: cd pirataoskin && npm install
+    startCommand: cd pirataoskin && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PORT
+        value: "10000"
