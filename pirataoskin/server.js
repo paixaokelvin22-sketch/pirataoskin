@@ -12,6 +12,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
 const session = require("express-session");
+const { SteamBot } = require("./bot/steam-bot");
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -35,7 +36,8 @@ function loadConfig() {
 const CONFIG = loadConfig();
 const ADMIN_IDS = new Set(CONFIG.adminSteamIds || []);
 const STORE_STEAMID = CONFIG.storeSteamId || (CONFIG.adminSteamIds || [])[0] || "";
-const MP_TOKEN = (CONFIG.mercadoPago && CONFIG.mercadoPago.accessToken) || process.env.MP_ACCESS_TOKEN || "";
+// Token padrão (config/env). Pode ser sobrescrito pelo painel admin (db.settings).
+const MP_TOKEN_DEFAULT = (CONFIG.mercadoPago && CONFIG.mercadoPago.accessToken) || process.env.MP_ACCESS_TOKEN || "";
 
 /* ---------- persistencia (JSON) ---------- */
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -48,8 +50,71 @@ function readJSON(file, fallback) {
 function writeJSON(file, obj) {
   try { fs.writeFileSync(file, JSON.stringify(obj, null, 2)); } catch (e) { console.error("writeJSON", e.message); }
 }
-let db = readJSON(DB_FILE, { users: {}, orders: [] });
+let db = readJSON(DB_FILE, { users: {}, orders: [], settings: {} });
+if (!db.users) db.users = {};
+if (!db.orders) db.orders = [];
+if (!db.settings) db.settings = {};
 function saveDB() { writeJSON(DB_FILE, db); }
+
+// Token do Mercado Pago: painel admin (db.settings) tem prioridade sobre config/env.
+function getMpToken() {
+  return (db.settings && db.settings.mpAccessToken) || MP_TOKEN_DEFAULT || "";
+}
+
+/* ---------- Steam Trade Bot (escrow de itens) ---------- */
+function getBotConfig() {
+  const fromFile = CONFIG.botSteam || {};
+  const fromDb = (db.settings && db.settings.botSteam) || {};
+  return { ...fromFile, ...fromDb, botSteamId: STORE_STEAMID };
+}
+const bot = new SteamBot(getBotConfig());
+
+// Mapeia mudanças de oferta -> estado do pedido (libera valor só após confirmação).
+bot.on("offer", (ev) => {
+  const order = db.orders.find((o) => o.offerId && String(o.offerId) === String(ev.offerId));
+  if (!order) return;
+  order.tradeState = ev.state;
+  const now = new Date().toISOString();
+  if (ev.state === "accepted") {
+    if (order.type === "sell") {
+      // recebemos a skin do vendedor -> liberar pagamento (payout)
+      order.status = "payout_pending";
+      order.itemsReceivedAt = now;
+    } else {
+      // comprador recebeu a skin -> pedido concluído
+      order.status = "completed";
+      order.deliveredAt = now;
+    }
+  } else if (ev.state === "declined" || ev.state === "canceled") {
+    order.status = order.type === "sell" ? "canceled" : "delivery_failed";
+  }
+  saveDB();
+  console.log("[bot] oferta", ev.offerId, "->", ev.state, "| pedido", order.id, "->", order.status);
+});
+
+// Dispara a entrega da skin ao comprador (após pagamento confirmado).
+async function deliverPaidOrder(order) {
+  if (!order || order.type !== "buy") return;
+  if (order.offerId || ["trade_sent", "completed"].includes(order.status)) return;
+  if (!order.tradeUrl) { order.status = "aguardando_trade_url"; saveDB(); return; }
+  try {
+    const r = await bot.sendItems({
+      tradeUrl: order.tradeUrl,
+      assetIds: order.assetIds || [],
+      message: "PIRATAOSKIN — entrega do pedido " + order.id,
+    });
+    order.offerId = r.offerId;
+    order.status = "trade_sent";
+    order.tradeState = r.state;
+    saveDB();
+    console.log("[bot] entrega enviada do pedido", order.id, "oferta", r.offerId);
+  } catch (e) {
+    order.status = "delivery_failed";
+    order.deliveryError = e.message;
+    saveDB();
+    console.error("[bot] falha na entrega do pedido", order.id, e.message);
+  }
+}
 let priceCache = readJSON(PRICE_FILE, {}); // name -> { price (number), display, ts }
 const PRICE_TTL = 30 * 60 * 1000;
 function savePrices() { writeJSON(PRICE_FILE, priceCache); }
@@ -230,7 +295,7 @@ app.get("/api/price", async (req, res) => {
 /* ---------- loja (inventario do storeSteamId, com markup) ---------- */
 const STORE_MARKUP = 1.0; // 1.0 = preco de mercado; ajuste para margem (ex.: 1.08)
 app.get("/api/store", async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || "12", 10) || 12, 60);
+  const limit = Math.min(parseInt(req.query.limit || "12", 10) || 12, 240);
   if (!/^\d{17}$/.test(STORE_STEAMID)) return res.status(400).json({ error: "store_nao_configurada", items: [] });
   try {
     const inv = await fetchInventory(STORE_STEAMID);
@@ -239,7 +304,7 @@ app.get("/api/store", async (req, res) => {
     const slice = marketable.slice(0, limit).map((i) => {
       const c = priceCache[i.market_hash_name];
       const price = c && c.price != null ? Math.round(c.price * STORE_MARKUP * 100) / 100 : null;
-      return { ...i, price };
+      return { ...i, id: i.assetid, price }; // id = assetid (chave usada nos cards/carrinho)
     });
     res.json({ items: slice, count: marketable.length });
   } catch (e) { res.status(502).json({ error: "falha_steam", detail: e.message, items: [] }); }
@@ -265,9 +330,49 @@ app.post("/api/orders", requireAuth, (req, res) => {
   res.json({ ok: true, order });
 });
 
+/* ---------- venda (usuário vende skins para a loja) ---------- */
+app.post("/api/sell", requireAuth, async (req, res) => {
+  const { items, tradeUrl, pixKey } = req.body || {};
+  const arr = Array.isArray(items) ? items : [];
+  if (!arr.length) return res.status(400).json({ error: "sem_itens" });
+  if (!tradeUrl) return res.status(400).json({ error: "sem_trade_url", msg: "Informe sua Trade URL da Steam." });
+  if (!pixKey) return res.status(400).json({ error: "sem_pix", msg: "Informe sua chave PIX para receber." });
+  const user = req.session.user;
+  const assetIds = arr.map((i) => i.assetid || i.id).filter((id) => /^\d+$/.test(String(id)));
+  const market = arr.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const payout = Math.round(market * 0.85 * 100) / 100; // você recebe 85%
+  const order = {
+    id: "SO-" + Date.now().toString(36).toUpperCase(),
+    type: "sell",
+    steamid: user.steamid, buyer: user.name,
+    items: arr.map((i) => ({ name: i.name, price: Number(i.price) || 0, id: i.assetid || i.id })),
+    assetIds,
+    tradeUrl, pixKey,
+    market, total: payout, method: "pix_payout",
+    status: "awaiting_items",
+    offerId: null, tradeState: null,
+    createdAt: new Date().toISOString(), itemsReceivedAt: null, paidOutAt: null,
+  };
+  try {
+    const r = await bot.requestItems({
+      tradeUrl, assetIds,
+      message: "PIRATAOSKIN — venda " + order.id + ". Aceite para enviar suas skins; o PIX é liberado após o recebimento.",
+    });
+    order.offerId = r.offerId;
+    order.tradeState = r.state;
+    order.status = "trade_sent";
+  } catch (e) {
+    order.status = "trade_failed";
+    order.tradeError = e.message;
+  }
+  db.orders.push(order); saveDB();
+  res.json({ ok: order.status === "trade_sent", order: { id: order.id, status: order.status, offerId: order.offerId, payout }, error: order.tradeError });
+});
+
 /* ---------- Mercado Pago: cobranca PIX ---------- */
 async function mpCreatePixPayment({ amount, description, email, name }) {
-  if (!MP_TOKEN) { const e = new Error("mp_sem_token"); e.code = "no_token"; throw e; }
+  const token = getMpToken();
+  if (!token) { const e = new Error("mp_sem_token"); e.code = "no_token"; throw e; }
   const body = {
     transaction_amount: Math.round(amount * 100) / 100,
     description: description || "Pedido PIRATAOSKIN",
@@ -277,7 +382,7 @@ async function mpCreatePixPayment({ amount, description, email, name }) {
   const r = await fetch(MP_API + "/v1/payments", {
     method: "POST",
     headers: {
-      Authorization: "Bearer " + MP_TOKEN,
+      Authorization: "Bearer " + token,
       "Content-Type": "application/json",
       "X-Idempotency-Key": crypto.randomUUID(),
     },
@@ -289,28 +394,36 @@ async function mpCreatePixPayment({ amount, description, email, name }) {
 }
 
 app.post("/api/checkout/pix", requireAuth, async (req, res) => {
-  const { items, total } = req.body || {};
+  const { items, total, tradeUrl } = req.body || {};
   const amount = Number(total);
   if (!amount || amount <= 0) return res.status(400).json({ error: "valor_invalido" });
-  if (!MP_TOKEN) return res.status(503).json({ error: "mp_sem_token", msg: "Configure o Access Token do Mercado Pago em config.local.json." });
+  if (!getMpToken()) return res.status(503).json({ error: "mp_sem_token", msg: "Configure o Access Token do Mercado Pago no painel admin." });
+  const arr = Array.isArray(items) ? items : [];
+  const assetIds = arr.map((i) => i.id).filter((id) => /^\d+$/.test(String(id))); // ids reais = assetids
   try {
     const user = req.session.user;
     const pay = await mpCreatePixPayment({
       amount,
-      description: "PIRATAOSKIN — " + (Array.isArray(items) ? items.length : 0) + " skin(s)",
+      description: "PIRATAOSKIN — " + arr.length + " skin(s)",
       email: user.steamid + "@pirataoskin.com",
       name: user.name,
     });
+    const approved = pay.status === "approved";
     const order = {
       id: "PO-" + Date.now().toString(36).toUpperCase(),
+      type: "buy",
       steamid: user.steamid, buyer: user.name,
-      items: Array.isArray(items) ? items.map((i) => ({ name: i.name, price: Number(i.price) || 0 })) : [],
+      items: arr.map((i) => ({ name: i.name, price: Number(i.price) || 0, id: i.id })),
+      assetIds,
+      tradeUrl: tradeUrl || null,
       total: amount, method: "pix",
-      status: pay.status === "approved" ? "paid" : "pending",
+      status: approved ? "paid" : "pending",
       mpPaymentId: pay.id,
-      createdAt: new Date().toISOString(), paidAt: pay.status === "approved" ? new Date().toISOString() : null,
+      offerId: null, tradeState: null,
+      createdAt: new Date().toISOString(), paidAt: approved ? new Date().toISOString() : null,
     };
     db.orders.push(order); saveDB();
+    if (approved) deliverPaidOrder(order);
     const tx = (pay.point_of_interaction && pay.point_of_interaction.transaction_data) || {};
     res.json({
       ok: true, orderId: order.id, paymentId: pay.id, status: pay.status,
@@ -323,17 +436,18 @@ app.post("/api/checkout/pix", requireAuth, async (req, res) => {
 });
 
 app.get("/api/checkout/status/:paymentId", requireAuth, async (req, res) => {
-  if (!MP_TOKEN) return res.status(503).json({ error: "mp_sem_token" });
+  if (!getMpToken()) return res.status(503).json({ error: "mp_sem_token" });
   try {
     const r = await fetch(MP_API + "/v1/payments/" + req.params.paymentId, {
-      headers: { Authorization: "Bearer " + MP_TOKEN },
+      headers: { Authorization: "Bearer " + getMpToken() },
     });
     const d = await r.json();
     const order = db.orders.find((o) => String(o.mpPaymentId) === String(req.params.paymentId));
-    if (order && d.status === "approved" && order.status !== "paid") {
+    if (order && d.status === "approved" && order.status === "pending") {
       order.status = "paid"; order.paidAt = new Date().toISOString(); saveDB();
+      deliverPaidOrder(order);
     }
-    res.json({ status: d.status, status_detail: d.status_detail });
+    res.json({ status: d.status, status_detail: d.status_detail, orderStatus: order ? order.status : null });
   } catch (e) { res.status(502).json({ error: "mp_falha", detail: e.message }); }
 });
 
@@ -343,13 +457,14 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
   try {
     const id = (req.body && req.body.data && req.body.data.id) || req.query.id;
     const type = (req.body && req.body.type) || req.query.type;
-    if (!id || (type && type !== "payment") || !MP_TOKEN) return;
-    const r = await fetch(MP_API + "/v1/payments/" + id, { headers: { Authorization: "Bearer " + MP_TOKEN } });
+    if (!id || (type && type !== "payment") || !getMpToken()) return;
+    const r = await fetch(MP_API + "/v1/payments/" + id, { headers: { Authorization: "Bearer " + getMpToken() } });
     const d = await r.json();
     const order = db.orders.find((o) => String(o.mpPaymentId) === String(id));
-    if (order && d.status === "approved" && order.status !== "paid") {
+    if (order && d.status === "approved" && order.status === "pending") {
       order.status = "paid"; order.paidAt = new Date().toISOString(); saveDB();
       console.log("Pedido pago via webhook:", order.id);
+      deliverPaidOrder(order);
     }
   } catch (e) { console.error("webhook", e.message); }
 });
@@ -388,6 +503,93 @@ app.post("/api/admin/orders/:id/status", requireAdmin, (req, res) => {
   saveDB();
   res.json({ ok: true, order });
 });
+// configuracoes de pagamento (Access Token do Mercado Pago) — geridas pelo painel
+function maskToken(t) {
+  if (!t) return "";
+  if (t.length <= 10) return "•".repeat(t.length);
+  return t.slice(0, 8) + "…" + t.slice(-4);
+}
+app.get("/api/admin/settings", requireAdmin, (req, res) => {
+  const token = getMpToken();
+  res.json({
+    mpConfigured: !!token,
+    mpTokenMasked: maskToken(token),
+    mpEnv: token.startsWith("TEST-") ? "teste" : token ? "producao" : null,
+    source: db.settings.mpAccessToken ? "painel" : (MP_TOKEN_DEFAULT ? "config/env" : "nenhum"),
+  });
+});
+app.post("/api/admin/settings", requireAdmin, (req, res) => {
+  const body = req.body || {};
+  if (typeof body.mpAccessToken === "string") {
+    const t = body.mpAccessToken.trim();
+    if (t === "") {
+      delete db.settings.mpAccessToken; // limpa -> volta pro default de config/env
+    } else if (!/^(APP_USR-|TEST-)/.test(t)) {
+      return res.status(400).json({ error: "token_invalido", msg: "O Access Token deve começar com APP_USR- (produção) ou TEST- (teste)." });
+    } else {
+      db.settings.mpAccessToken = t;
+    }
+    saveDB();
+  }
+  const token = getMpToken();
+  res.json({ ok: true, mpConfigured: !!token, mpTokenMasked: maskToken(token), mpEnv: token.startsWith("TEST-") ? "teste" : token ? "producao" : null });
+});
+
+// ---- Bot de trade (status, credenciais, ações de escrow) ----
+app.get("/api/admin/bot", requireAdmin, (req, res) => {
+  const c = getBotConfig();
+  res.json({
+    status: bot.status(),
+    credentials: {
+      accountName: c.accountName ? c.accountName : null,
+      hasPassword: !!c.password,
+      hasSharedSecret: !!c.sharedSecret,
+      hasIdentitySecret: !!c.identitySecret,
+      hasApiKey: !!c.apiKey,
+    },
+  });
+});
+app.post("/api/admin/bot/credentials", requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  db.settings.botSteam = db.settings.botSteam || {};
+  ["accountName", "password", "sharedSecret", "identitySecret", "apiKey"].forEach((k) => {
+    if (typeof b[k] === "string" && b[k].trim() !== "") db.settings.botSteam[k] = b[k].trim();
+    if (b[k] === "") delete db.settings.botSteam[k];
+  });
+  saveDB();
+  bot.configure(getBotConfig());
+  try { await bot.start(); } catch (e) {}
+  res.json({ ok: true, status: bot.status() });
+});
+// liberar pagamento de uma venda (após confirmar recebimento da skin)
+app.post("/api/admin/orders/:id/payout", requireAdmin, (req, res) => {
+  const order = db.orders.find((o) => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: "nao_encontrado" });
+  if (order.type !== "sell") return res.status(400).json({ error: "nao_e_venda" });
+  order.status = "paid_out";
+  order.paidOutAt = new Date().toISOString();
+  saveDB();
+  res.json({ ok: true, order });
+});
+// reenviar a entrega de uma compra
+app.post("/api/admin/orders/:id/redeliver", requireAdmin, async (req, res) => {
+  const order = db.orders.find((o) => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: "nao_encontrado" });
+  order.offerId = null;
+  if (order.status === "delivery_failed" || order.status === "aguardando_trade_url") order.status = "paid";
+  await deliverPaidOrder(order);
+  res.json({ ok: true, order });
+});
+// simular avanço de oferta (apenas modo simulação, para testes do fluxo)
+app.post("/api/admin/orders/:id/simulate", requireAdmin, (req, res) => {
+  const order = db.orders.find((o) => o.id === req.params.id);
+  if (!order || !order.offerId) return res.status(404).json({ error: "sem_oferta" });
+  if (bot.status().mode !== "simulation") return res.status(400).json({ error: "apenas_simulacao" });
+  const state = (req.body && req.body.state) || "accepted";
+  bot.simulateOfferState(order.offerId, state);
+  res.json({ ok: true });
+});
+
 // promover/rebaixar admin
 app.post("/api/admin/users/:steamid/admin", requireAdmin, (req, res) => {
   const u = db.users[req.params.steamid];
@@ -404,5 +606,6 @@ app.use(express.static(ROOT, { extensions: ["html"] }));
 app.listen(PORT, () => {
   console.log("PIRATAOSKIN (backend real) em http://localhost:" + PORT);
   console.log("Admins:", [...ADMIN_IDS].join(", ") || "(nenhum)");
-  console.log("Mercado Pago:", MP_TOKEN ? "token configurado" : "SEM token (configure config.local.json)");
+  console.log("Mercado Pago:", getMpToken() ? "token configurado" : "SEM token (configure no painel admin)");
+  bot.start().catch((e) => console.error("[bot] start:", e.message));
 });

@@ -53,9 +53,11 @@
         <div class="srow"><span>Skins selecionadas</span><span id="sell-count">0</span></div>
         <div class="srow"><span>Valor de mercado</span><span id="sell-market">R$ 0,00</span></div>
         <div class="srow total"><span>Você recebe (85%)</span><b id="sell-total">R$ 0,00</b></div>
-        <div class="note">💸 Preços puxados em tempo real do Steam Market (BRL). Pagamento via Pix.</div>
-        <div class="field"><label>Sua chave Pix</label><input placeholder="CPF, e-mail, telefone ou aleatória" /></div>
-        <button class="btn btn-gold btn-block" id="sell-btn">Receber via Pix</button>
+        <div class="note">💸 Preços do Steam Market (BRL). O bot envia a oferta; o PIX é liberado <b>após o recebimento</b> das skins.</div>
+        <div class="field"><label>Sua Trade URL da Steam</label><input id="sell-tradeurl" placeholder="https://steamcommunity.com/tradeoffer/new/?partner=...&token=..." /></div>
+        <div class="field"><label>Sua chave PIX</label><input id="sell-pix" placeholder="CPF, e-mail, telefone ou aleatória" /></div>
+        <button class="btn btn-gold btn-block" id="sell-btn">Vender e receber via PIX</button>
+        <p id="sell-msg" style="font-size:.82rem;color:var(--text-muted);margin:.7rem 0 0"></p>
       </aside>
     </div>
   </section>
@@ -149,9 +151,43 @@
       document.getElementById("sell-total").textContent = PIRATA.brl(market * 0.85);
     }
 
-    document.getElementById("sell-btn").addEventListener("click", function () {
+    document.getElementById("sell-btn").addEventListener("click", async function () {
+      var msg = document.getElementById("sell-msg");
+      if (!PIRATA.getUser()) { msg.style.color = "var(--ruby)"; msg.innerHTML = 'Entre com a Steam para vender. <a href="/auth/steam" style="color:var(--gold)">Entrar</a>'; return; }
       if (!selected.size) { PIRATA.toast("Selecione ao menos uma skin para vender."); return; }
-      PIRATA.toast("⚓ Oferta registrada! (Integração de pagamento Pix é o próximo passo.)");
+      var tradeUrl = document.getElementById("sell-tradeurl").value.trim();
+      var pixKey = document.getElementById("sell-pix").value.trim();
+      if (!/steamcommunity\.com\/tradeoffer\/new/.test(tradeUrl)) { msg.style.color = "var(--ruby)"; msg.textContent = "Informe uma Trade URL válida da Steam."; return; }
+      if (!pixKey) { msg.style.color = "var(--ruby)"; msg.textContent = "Informe sua chave PIX."; return; }
+
+      var payloadItems = [];
+      selected.forEach(function (v) {
+        payloadItems.push({ assetid: v.item.assetid, name: v.item.name, market_hash_name: v.item.market_hash_name, price: v.price });
+      });
+
+      var btn = document.getElementById("sell-btn");
+      btn.disabled = true; btn.textContent = "Enviando oferta…"; msg.style.color = "var(--text-muted)"; msg.textContent = "";
+      try {
+        var r = await fetch("/api/sell", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: payloadItems, tradeUrl: tradeUrl, pixKey: pixKey }),
+        });
+        var d = await r.json();
+        if (d.ok) {
+          msg.style.color = "var(--success)";
+          msg.innerHTML = "✅ Oferta de troca enviada pelo bot (pedido " + d.order.id + ")! Aceite na Steam. " +
+            "Assim que recebermos suas skins, o PIX de " + PIRATA.brl(d.order.payout) + " é liberado.";
+          btn.textContent = "Oferta enviada";
+        } else {
+          msg.style.color = "var(--ruby)";
+          msg.textContent = "Não foi possível enviar a oferta: " + (d.msg || d.error || "erro");
+          btn.disabled = false; btn.textContent = "Vender e receber via PIX";
+        }
+      } catch (e) {
+        msg.style.color = "var(--ruby)"; msg.textContent = "Falha de rede.";
+        btn.disabled = false; btn.textContent = "Vender e receber via PIX";
+      }
     });
   });
   </script>

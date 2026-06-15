@@ -47,6 +47,8 @@
         <div class="tab on" data-tab="finance">💰 Financeiro</div>
         <div class="tab" data-tab="orders">🧾 Pedidos</div>
         <div class="tab" data-tab="users">👥 Usuários</div>
+        <div class="tab" data-tab="trades">🤖 Bot & Trades</div>
+        <div class="tab" data-tab="settings">⚙ Pagamento</div>
       </div>
 
       <section id="tab-finance">
@@ -68,6 +70,62 @@
           <thead><tr><th>Avatar</th><th>Nome</th><th>SteamID</th><th>Logins</th><th>Último acesso</th><th>Admin</th></tr></thead>
           <tbody id="users-rows"></tbody>
         </table></div>
+      </section>
+
+      <section id="tab-trades" style="display:none">
+        <div class="panel" style="margin-bottom:1.2rem">
+          <h3 class="display">Status do bot Steam</h3>
+          <div id="bot-status" style="margin-bottom:1rem">Carregando…</div>
+          <details>
+            <summary style="cursor:pointer;color:var(--gold);font-weight:600">Configurar credenciais do bot</summary>
+            <div style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:.6rem;padding:.8rem 1rem;margin:.8rem 0;font-size:.85rem;color:var(--text-muted)">
+              ⚠️ Sem credenciais o bot opera em <b>SIMULAÇÃO</b>. Para modo real informe a conta do bot,
+              senha, <b>shared_secret</b> e <b>identity_secret</b> (do Steam Mobile Authenticator) e a
+              <b>API key</b> (steamcommunity.com/dev/apikey). Os segredos ficam só no servidor.
+            </div>
+            <div class="field"><label>Conta (login)</label><input id="bot-account" autocomplete="off" /></div>
+            <div class="field"><label>Senha</label><input id="bot-password" type="password" autocomplete="off" /></div>
+            <div class="field"><label>shared_secret</label><input id="bot-shared" type="password" autocomplete="off" /></div>
+            <div class="field"><label>identity_secret</label><input id="bot-identity" type="password" autocomplete="off" /></div>
+            <div class="field"><label>API key</label><input id="bot-apikey" type="password" autocomplete="off" /></div>
+            <button class="btn btn-gold" id="bot-save">Salvar e reiniciar bot</button>
+            <p id="bot-msg" style="font-size:.85rem;margin-top:.7rem"></p>
+          </details>
+        </div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Pedido</th><th>Tipo</th><th>Itens</th><th>Valor</th><th>Oferta</th><th>Estado</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="trades-rows"></tbody>
+        </table></div>
+      </section>
+
+      <section id="tab-settings" style="display:none">
+        <div class="panel" style="max-width:680px">
+          <h3 class="display">Credencial de pagamento (Mercado Pago)</h3>
+          <p style="color:var(--text-muted);font-size:.9rem;margin-top:0">
+            Cole aqui o <b>Access Token</b> da sua conta Mercado Pago. Ele fica salvo no servidor —
+            assim você troca de máquina sem mexer no código.
+          </p>
+          <div style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:.6rem;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem;color:var(--text-muted)">
+            ℹ️ <b>Não é a sua chave PIX.</b> O Access Token é uma credencial de API
+            (começa com <code>APP_USR-</code> em produção ou <code>TEST-</code> em teste).
+            Pegue em: Mercado Pago → <i>Suas integrações → Credenciais</i>.
+          </div>
+
+          <div id="mp-status" style="margin-bottom:1rem"></div>
+
+          <div class="field">
+            <label>Access Token</label>
+            <input type="password" id="mp-token" placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-..." autocomplete="off" />
+          </div>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+            <button class="btn btn-gold" id="mp-save">Salvar credencial</button>
+            <button class="btn btn-soft" id="mp-clear">Remover credencial</button>
+            <label style="display:flex;align-items:center;gap:.4rem;color:var(--text-muted);font-size:.85rem;cursor:pointer">
+              <input type="checkbox" id="mp-show" /> mostrar
+            </label>
+          </div>
+          <p id="mp-msg" style="font-size:.85rem;margin-top:.8rem"></p>
+        </div>
       </section>
     </div>
   </main>
@@ -184,10 +242,154 @@
       t.addEventListener("click", function () {
         document.querySelectorAll(".admin-tabs .tab").forEach(function (x) { x.classList.remove("on"); });
         t.classList.add("on");
-        ["finance", "orders", "users"].forEach(function (name) {
+        ["finance", "orders", "users", "trades", "settings"].forEach(function (name) {
           document.getElementById("tab-" + name).style.display = name === t.dataset.tab ? "" : "none";
         });
+        if (t.dataset.tab === "settings") loadSettings();
+        if (t.dataset.tab === "trades") loadTrades();
       });
+    });
+
+    // ---- configuração de pagamento ----
+    async function loadSettings() {
+      try {
+        var s = await fetch("/api/admin/settings", { credentials: "same-origin" }).then((r) => r.json());
+        renderMpStatus(s);
+      } catch (e) { /* ignore */ }
+    }
+    function renderMpStatus(s) {
+      var box = document.getElementById("mp-status");
+      if (s.mpConfigured) {
+        var envTag = s.mpEnv === "teste"
+          ? '<span class="pill pending">TESTE</span>' : '<span class="pill paid">PRODUÇÃO</span>';
+        box.innerHTML = "✅ Configurado " + envTag +
+          ' <span style="color:var(--text-muted)">— token <code>' + (s.mpTokenMasked || "") + "</code> (origem: " + (s.source || "") + ")</span>";
+      } else {
+        box.innerHTML = '<span class="pill canceled">NÃO CONFIGURADO</span> ' +
+          '<span style="color:var(--text-muted)">— o checkout PIX fica indisponível até salvar a credencial.</span>';
+      }
+    }
+    document.getElementById("mp-show").addEventListener("change", function (e) {
+      document.getElementById("mp-token").type = e.target.checked ? "text" : "password";
+    });
+    document.getElementById("mp-save").addEventListener("click", async function () {
+      var token = document.getElementById("mp-token").value.trim();
+      var msg = document.getElementById("mp-msg");
+      if (!token) { msg.style.color = "var(--ruby)"; msg.textContent = "Cole um Access Token para salvar."; return; }
+      var r = await fetch("/api/admin/settings", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mpAccessToken: token }),
+      });
+      var d = await r.json();
+      if (!r.ok) { msg.style.color = "var(--ruby)"; msg.textContent = d.msg || "Token inválido."; return; }
+      msg.style.color = "var(--success)"; msg.textContent = "Credencial salva! PIX ativado.";
+      document.getElementById("mp-token").value = "";
+      renderMpStatus(d);
+      PIRATA.toast("Credencial de pagamento salva ⚓");
+    });
+    document.getElementById("mp-clear").addEventListener("click", async function () {
+      var r = await fetch("/api/admin/settings", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mpAccessToken: "" }),
+      });
+      var d = await r.json();
+      document.getElementById("mp-token").value = "";
+      document.getElementById("mp-msg").style.color = "var(--text-muted)";
+      document.getElementById("mp-msg").textContent = "Credencial removida.";
+      renderMpStatus(d);
+    });
+
+    // ---- bot & trades ----
+    async function loadTrades() {
+      try {
+        var [botInfo, ordersResp] = await Promise.all([
+          fetch("/api/admin/bot", { credentials: "same-origin" }).then((r) => r.json()),
+          fetch("/api/admin/orders", { credentials: "same-origin" }).then((r) => r.json()),
+        ]);
+        renderBotStatus(botInfo);
+        renderTrades(ordersResp.orders || [], botInfo.status);
+      } catch (e) { /* ignore */ }
+    }
+
+    function renderBotStatus(info) {
+      var s = info.status || {};
+      var c = info.credentials || {};
+      var modeTag = s.mode === "live"
+        ? '<span class="pill paid">REAL (live)</span>' : '<span class="pill pending">SIMULAÇÃO</span>';
+      var creds = ["accountName", "hasPassword", "hasSharedSecret", "hasIdentitySecret", "hasApiKey"]
+        .map(function (k) { return (k === "accountName" ? !!c.accountName : c[k]) ? "✅" : "❌"; });
+      document.getElementById("bot-status").innerHTML =
+        modeTag + ' <span style="color:var(--text-muted)">online: ' + (s.online ? "sim" : "não") +
+        " · SteamID: " + (s.steamid || "—") + (s.error ? " · erro: " + s.error : "") + "</span>" +
+        '<div style="color:var(--text-muted);font-size:.82rem;margin-top:.5rem">Credenciais — conta ' + creds[0] +
+        " · senha " + creds[1] + " · shared " + creds[2] + " · identity " + creds[3] + " · apiKey " + creds[4] + "</div>";
+      if (c.accountName) document.getElementById("bot-account").placeholder = c.accountName + " (configurado)";
+    }
+
+    function renderTrades(orders, botStatus) {
+      var sim = botStatus && botStatus.mode === "simulation";
+      document.getElementById("trades-rows").innerHTML = orders.length ? orders.map(function (o) {
+        var actions = "";
+        if (o.type === "sell" && (o.status === "payout_pending" || o.status === "items_received")) {
+          actions += '<button class="btn btn-gold btn-sm" data-payout="' + o.id + '">Liberar PIX</button> ';
+        }
+        if (o.type === "buy" && (o.status === "delivery_failed" || o.status === "aguardando_trade_url")) {
+          actions += '<button class="btn btn-soft btn-sm" data-redeliver="' + o.id + '">Reenviar</button> ';
+        }
+        if (sim && o.offerId && !["completed", "paid_out", "canceled"].includes(o.status)) {
+          actions += '<button class="btn btn-soft btn-sm" data-sim="' + o.id + '">Simular aceite</button>';
+        }
+        return "<tr><td>" + o.id + "</td><td>" + (o.type || "—") + "</td><td>" + (o.items ? o.items.length : 0) +
+          "</td><td class='tnum'>" + brl(o.total || 0) + "</td><td>" + (o.offerId || "—") +
+          "</td><td>" + (o.tradeState || "—") + "</td><td>" + statusPill2(o.status) + "</td><td>" + (actions || "—") + "</td></tr>";
+      }).join("") : '<tr><td colspan="8" style="color:var(--text-muted)">Nenhuma trade ainda.</td></tr>';
+
+      document.querySelectorAll("[data-payout]").forEach(function (b) {
+        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.payout + "/payout"); });
+      });
+      document.querySelectorAll("[data-redeliver]").forEach(function (b) {
+        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.redeliver + "/redeliver"); });
+      });
+      document.querySelectorAll("[data-sim]").forEach(function (b) {
+        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.sim + "/simulate", { state: "accepted" }); });
+      });
+    }
+
+    function statusPill2(st) {
+      var ok = ["completed", "paid_out", "paid"].indexOf(st) >= 0;
+      var bad = ["canceled", "delivery_failed", "trade_failed"].indexOf(st) >= 0;
+      var cls = ok ? "paid" : bad ? "canceled" : "pending";
+      return '<span class="pill ' + cls + '">' + st + "</span>";
+    }
+
+    async function botAction(url, body) {
+      await fetch(url, {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
+      });
+      PIRATA.toast("Ação executada."); loadTrades(); loadAll();
+    }
+
+    document.getElementById("bot-save").addEventListener("click", async function () {
+      var payload = {
+        accountName: document.getElementById("bot-account").value.trim(),
+        password: document.getElementById("bot-password").value,
+        sharedSecret: document.getElementById("bot-shared").value.trim(),
+        identitySecret: document.getElementById("bot-identity").value.trim(),
+        apiKey: document.getElementById("bot-apikey").value.trim(),
+      };
+      var msg = document.getElementById("bot-msg");
+      msg.style.color = "var(--text-muted)"; msg.textContent = "Salvando e reiniciando o bot…";
+      var r = await fetch("/api/admin/bot/credentials", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      var d = await r.json();
+      ["bot-password", "bot-shared", "bot-identity", "bot-apikey"].forEach(function (id) { document.getElementById(id).value = ""; });
+      msg.style.color = d.status && d.status.mode === "live" ? "var(--success)" : "var(--gold)";
+      msg.textContent = d.status && d.status.mode === "live"
+        ? "Bot conectado em modo REAL." : "Salvo. Bot em " + (d.status ? d.status.mode : "?") + (d.status && d.status.error ? " — " + d.status.error : "");
+      loadTrades();
     });
 
     document.getElementById("refresh").addEventListener("click", loadAll);

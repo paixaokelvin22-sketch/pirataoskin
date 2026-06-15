@@ -6,5 +6,13 @@
     "accessToken": "",
     "webhookSecret": ""
   },
-  "payerEmailFallback": "comprador@pirataoskin.com"
+  "payerEmailFallback": "comprador@pirataoskin.com",
+  "_botSteam_help": "Credenciais do bot de trade. Sem elas, o bot roda em MODO SIMULACAO. shared/identity secret vem do Steam Mobile Authenticator (ex.: Steam Desktop Authenticator). Pode tambem configurar pelo painel admin.",
+  "botSteam": {
+    "accountName": "",
+    "password": "",
+    "sharedSecret": "",
+    "identitySecret": "",
+    "apiKey": ""
+  }
 }

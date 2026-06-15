@@ -32,7 +32,7 @@
   }
   function snapshotFromStore(it) {
     return {
-      id: it.id, name: it.name, image: it.image || "", price: it.price,
+      id: it.id || it.assetid, name: it.name, image: it.image || "", price: it.price,
       meta: it.wear || it.type || "", market_hash_name: it.market_hash_name || null,
       rarityColor: it.rarityColor || null,
     };

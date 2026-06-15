@@ -12,7 +12,7 @@
 <body>
   <div id="site-header"></div>
 
-  <div class="wrap crumb"><a href="index.html">Início</a> / <span id="crumb-cat">Catálogo</span></div>
+  <div class="wrap crumb"><a href="index.html">Início</a> / <span>Catálogo</span></div>
 
   <div class="wrap catalog">
     <!-- FILTROS -->
@@ -21,12 +21,7 @@
 
       <div class="fgroup">
         <div class="lbl">Buscar</div>
-        <div class="frow"><input type="search" id="f-q" placeholder="Nome da skin ou arma..." /></div>
-      </div>
-
-      <div class="fgroup">
-        <div class="lbl">Categoria</div>
-        <div class="chips" id="f-cats"></div>
+        <div class="frow"><input type="search" id="f-q" placeholder="Nome, arma, coleção..." /></div>
       </div>
 
       <div class="fgroup">
@@ -40,22 +35,12 @@
       </div>
 
       <div class="fgroup">
-        <div class="lbl">Float máximo</div>
-        <div class="frow"><input type="range" id="f-float" min="0" max="1" step="0.01" value="1" style="width:100%" /></div>
-        <div class="floatval tnum">Até <span id="f-float-val">1.00</span></div>
-      </div>
-
-      <div class="fgroup">
         <div class="lbl">Preço (R$)</div>
         <div class="frow">
           <input type="number" id="f-min" placeholder="mín" min="0" />
           <span style="color:var(--text-muted)">—</span>
           <input type="number" id="f-max" placeholder="máx" min="0" />
         </div>
-      </div>
-
-      <div class="fgroup">
-        <div class="toggle"><span>StatTrak™</span><div class="switch" id="f-st" role="switch"></div></div>
       </div>
 
       <div class="fgroup" style="border-bottom:none;padding-bottom:0">
@@ -67,17 +52,15 @@
     <main class="catalog-main">
       <div class="topbar">
         <div>
-          <h2 class="display" id="cat-title" style="margin:0">Todas as skins</h2>
-          <span class="count" id="count">0 itens</span>
+          <h2 class="display" id="cat-title" style="margin:0">Skins à venda</h2>
+          <span class="count" id="count">carregando…</span>
         </div>
         <div style="display:flex;gap:.6rem">
           <button class="btn btn-soft btn-sm filters-toggle" onclick="document.getElementById('filters').scrollIntoView({behavior:'smooth'})">Filtros</button>
           <select class="select" id="sort">
-            <option value="recent">Mais recentes</option>
             <option value="price-asc">Menor preço</option>
             <option value="price-desc">Maior preço</option>
-            <option value="float-asc">Menor float</option>
-            <option value="float-desc">Maior float</option>
+            <option value="name">Nome (A-Z)</option>
           </select>
         </div>
       </div>
@@ -91,134 +74,103 @@
   <script src="js/site.js"></script>
   <script>
   document.addEventListener("DOMContentLoaded", function () {
-    var D = PIRATA.D;
+    var allItems = [];
+    var state = { q: "", rar: new Set(), wear: new Set(), min: null, max: null, sort: "price-asc" };
+
+    // pré-preenche busca via ?q=
     var params = new URLSearchParams(location.search);
-    var state = {
-      q: params.get("q") || "",
-      cats: new Set(params.get("cat") ? [params.get("cat")] : []),
-      rar: new Set(),
-      wear: new Set(),
-      floatMax: 1,
-      min: null, max: null,
-      stattrak: false,
-      sort: "recent",
-    };
-
-    // monta chips de categoria
-    document.getElementById("f-cats").innerHTML = D.categorias.map(function (c) {
-      return '<span class="chip' + (state.cats.has(c.slug) ? " on" : "") + '" data-cat="' + c.slug + '">' + c.nome + '</span>';
-    }).join("");
-    // raridade
-    document.getElementById("f-rar").innerHTML = Object.keys(D.raridadeNome).map(function (r) {
-      return '<span class="chip" data-rar="' + r + '" style="border-color:' + D.raridadeCor[r] + '55">' + D.raridadeNome[r] + '</span>';
-    }).join("");
-    // wear
-    document.getElementById("f-wear").innerHTML = Object.keys(D.wearLabels).map(function (w) {
-      return '<span class="chip" data-wear="' + w + '">' + w + '</span>';
-    }).join("");
-
-    // preenche busca inicial
+    state.q = params.get("q") || "";
     document.getElementById("f-q").value = state.q;
+
+    function buildChips() {
+      var rarSet = {}, wearSet = {};
+      allItems.forEach(function (i) {
+        if (i.rarity) rarSet[i.rarity] = i.rarityColor || "#5E98D9";
+        if (i.wear) wearSet[i.wear] = true;
+      });
+      document.getElementById("f-rar").innerHTML = Object.keys(rarSet).sort().map(function (r) {
+        return '<span class="chip" data-rar="' + r + '" style="border-color:' + rarSet[r] + '55">' + r + '</span>';
+      }).join("") || '<span style="color:var(--text-muted);font-size:.8rem">—</span>';
+      document.getElementById("f-wear").innerHTML = Object.keys(wearSet).sort().map(function (w) {
+        return '<span class="chip" data-wear="' + w + '">' + w + '</span>';
+      }).join("") || '<span style="color:var(--text-muted);font-size:.8rem">—</span>';
+
+      document.querySelectorAll("#f-rar .chip").forEach(function (el) {
+        el.addEventListener("click", function () { toggleSet(state.rar, el.dataset.rar, el); });
+      });
+      document.querySelectorAll("#f-wear .chip").forEach(function (el) {
+        el.addEventListener("click", function () { toggleSet(state.wear, el.dataset.wear, el); });
+      });
+    }
 
     function toggleSet(set, val, el) {
       if (set.has(val)) { set.delete(val); el.classList.remove("on"); }
       else { set.add(val); el.classList.add("on"); }
       render();
     }
-    document.querySelectorAll("#f-cats .chip").forEach(function (el) {
-      el.addEventListener("click", function () { toggleSet(state.cats, el.dataset.cat, el); });
-    });
-    document.querySelectorAll("#f-rar .chip").forEach(function (el) {
-      el.addEventListener("click", function () { toggleSet(state.rar, el.dataset.rar, el); });
-    });
-    document.querySelectorAll("#f-wear .chip").forEach(function (el) {
-      el.addEventListener("click", function () { toggleSet(state.wear, el.dataset.wear, el); });
-    });
 
     document.getElementById("f-q").addEventListener("input", function (e) { state.q = e.target.value; render(); });
-    var floatEl = document.getElementById("f-float");
-    floatEl.addEventListener("input", function (e) {
-      state.floatMax = parseFloat(e.target.value);
-      document.getElementById("f-float-val").textContent = state.floatMax.toFixed(2);
-      render();
-    });
     document.getElementById("f-min").addEventListener("input", function (e) { state.min = e.target.value ? parseFloat(e.target.value) : null; render(); });
     document.getElementById("f-max").addEventListener("input", function (e) { state.max = e.target.value ? parseFloat(e.target.value) : null; render(); });
-    var stEl = document.getElementById("f-st");
-    stEl.addEventListener("click", function () { state.stattrak = !state.stattrak; stEl.classList.toggle("on"); render(); });
     document.getElementById("sort").addEventListener("change", function (e) { state.sort = e.target.value; render(); });
-
     document.getElementById("f-clear").addEventListener("click", function () {
-      state.q = ""; state.cats.clear(); state.rar.clear(); state.wear.clear();
-      state.floatMax = 1; state.min = null; state.max = null; state.stattrak = false;
+      state.q = ""; state.rar.clear(); state.wear.clear(); state.min = null; state.max = null;
       document.getElementById("f-q").value = "";
       document.getElementById("f-min").value = ""; document.getElementById("f-max").value = "";
-      floatEl.value = 1; document.getElementById("f-float-val").textContent = "1.00";
-      stEl.classList.remove("on");
       document.querySelectorAll(".filters .chip.on").forEach(function (c) { c.classList.remove("on"); });
       render();
     });
 
-    function matchCat(skinCat, sel) {
-      // suporta subcategorias (ex.: outros/agent)
-      for (var c of sel) { if (skinCat === c || skinCat.indexOf(c) === 0) return true; }
-      return false;
-    }
-
     function apply() {
-      var list = D.skins.filter(function (s) {
-        if (state.q) {
-          var hay = (s.arma + " " + s.skin).toLowerCase();
-          if (hay.indexOf(state.q.toLowerCase()) === -1) return false;
-        }
-        if (state.cats.size && !matchCat(s.categoria, state.cats)) return false;
-        if (state.rar.size && !state.rar.has(s.raridade)) return false;
-        if (state.wear.size && (!s.wear || !state.wear.has(s.wear))) return false;
-        if (s.float != null && s.float > state.floatMax) return false;
-        if (state.min != null && s.preco < state.min) return false;
-        if (state.max != null && s.preco > state.max) return false;
-        if (state.stattrak && !s.stattrak) return false;
+      var list = allItems.filter(function (i) {
+        if (state.q && (i.name || "").toLowerCase().indexOf(state.q.toLowerCase()) === -1) return false;
+        if (state.rar.size && !state.rar.has(i.rarity)) return false;
+        if (state.wear.size && !state.wear.has(i.wear)) return false;
+        if (state.min != null && (i.price == null || i.price < state.min)) return false;
+        if (state.max != null && (i.price == null || i.price > state.max)) return false;
         return true;
       });
       var sorters = {
-        "price-asc": function (a, b) { return a.preco - b.preco; },
-        "price-desc": function (a, b) { return b.preco - a.preco; },
-        "float-asc": function (a, b) { return (a.float || 0) - (b.float || 0); },
-        "float-desc": function (a, b) { return (b.float || 0) - (a.float || 0); },
-        "recent": function () { return 0; },
+        "price-asc": function (a, b) { return (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price); },
+        "price-desc": function (a, b) { return (b.price == null ? -Infinity : b.price) - (a.price == null ? -Infinity : a.price); },
+        "name": function (a, b) { return (a.name || "").localeCompare(b.name || ""); },
       };
       return list.sort(sorters[state.sort]);
     }
 
-    function updateTitle() {
-      var title = "Todas as skins";
-      if (state.cats.size === 1) {
-        var slug = Array.from(state.cats)[0];
-        var c = D.categorias.find(function (x) { return x.slug === slug; });
-        if (c) title = c.nome;
-      } else if (state.cats.size > 1) {
-        title = "Skins selecionadas";
-      }
-      document.getElementById("cat-title").textContent = title;
-      document.getElementById("crumb-cat").textContent = title;
-    }
-
     function render() {
+      if (!allItems.length) return;
       var list = apply();
-      updateTitle();
-      document.getElementById("count").textContent =
-        list.length + (list.length === 1 ? " item" : " itens");
-      // recria o container caso o estado vazio tenha substituído o #grid
+      document.getElementById("count").textContent = list.length + (list.length === 1 ? " item" : " itens");
       var grid = document.getElementById("grid");
       if (!grid) {
-        grid = document.createElement("div");
-        grid.className = "grid"; grid.id = "grid";
-        document.querySelector(".catalog-main .empty").replaceWith(grid);
+        grid = document.createElement("div"); grid.className = "grid"; grid.id = "grid";
+        var empty = document.querySelector(".catalog-main .empty");
+        if (empty) empty.replaceWith(grid); else document.querySelector(".catalog-main").appendChild(grid);
       }
-      PIRATA.renderGrid(grid, list);
+      if (!list.length) {
+        grid.outerHTML = '<div class="empty"><div class="big">🪙</div><p>Nenhuma skin encontrada nesse baú. Tente outros filtros, marujo!</p></div>';
+        return;
+      }
+      PIRATA.renderStore(grid, list);
     }
 
-    render();
+    // carrega o inventário real à venda
+    fetch("/api/store?limit=240", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error === "private") {
+          document.getElementById("count").textContent = "inventário da loja está privado";
+          document.getElementById("grid").innerHTML = '<div class="empty"><div class="big">🔒</div><p>O inventário da loja está privado na Steam.</p></div>';
+          return;
+        }
+        allItems = (data.items || []);
+        buildChips();
+        render();
+      })
+      .catch(function () {
+        document.getElementById("count").textContent = "falha ao carregar";
+      });
   });
   </script>
 </body>

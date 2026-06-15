@@ -25,7 +25,11 @@
       <div class="note">⚡ Entrega automática via trade na Steam após a confirmação do pagamento.</div>
 
       <div id="checkout-area">
-        <button class="btn btn-gold btn-block" id="pay-btn" style="margin-top:.4rem">Pagar com PIX</button>
+        <div class="field" style="margin-top:.2rem">
+          <label>Sua Trade URL da Steam (para receber a skin)</label>
+          <input id="trade-url" placeholder="https://steamcommunity.com/tradeoffer/new/?partner=...&token=..." />
+        </div>
+        <button class="btn btn-gold btn-block" id="pay-btn">Pagar com PIX</button>
         <p id="pay-msg" style="font-size:.82rem;color:var(--text-muted);margin:.6rem 0 0"></p>
       </div>
 
@@ -96,6 +100,14 @@
       }
       var cart = PIRATA.getCart();
       if (!cart.length) return;
+      var tradeUrl = document.getElementById("trade-url").value.trim();
+      if (!/steamcommunity\.com\/tradeoffer\/new/.test(tradeUrl)) {
+        msg.style.color = "var(--ruby)";
+        msg.innerHTML = 'Informe sua Trade URL da Steam para receber a skin. ' +
+          '<a href="https://steamcommunity.com/my/tradeoffers/privacy" target="_blank" style="color:var(--gold)">Onde encontro?</a>';
+        return;
+      }
+      msg.style.color = "var(--text-muted)";
       var btn = document.getElementById("pay-btn");
       btn.disabled = true; btn.textContent = "Gerando PIX…"; msg.textContent = "";
 
@@ -103,7 +115,7 @@
         var r = await fetch("/api/checkout/pix", {
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: cart, total: PIRATA.cartTotal() }),
+          body: JSON.stringify({ items: cart, total: PIRATA.cartTotal(), tradeUrl: tradeUrl }),
         });
         var data = await r.json();
         if (r.status === 503 || data.error === "mp_sem_token") {
