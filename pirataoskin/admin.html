@@ -391,8 +391,16 @@
       });
     });
 
+    // ---- localStorage para credenciais (persist em refresh/timeout) ----
+    function saveToStorage(key, val) { localStorage.setItem("pirataoskin_" + key, val); }
+    function loadFromStorage(key) { return localStorage.getItem("pirataoskin_" + key) || ""; }
+    function clearStorage(key) { localStorage.removeItem("pirataoskin_" + key); }
+
     // ---- configuração de pagamento ----
     async function loadSettings() {
+      // restaura token do localStorage se existir
+      var savedToken = loadFromStorage("mp_token");
+      if (savedToken) document.getElementById("mp-token").value = savedToken;
       try {
         var s = await fetch("/api/admin/settings", { credentials: "same-origin" }).then(function (r) { return r.json(); });
         renderMpStatus(s);
@@ -417,18 +425,20 @@
       var token = document.getElementById("mp-token").value.trim();
       var msg = document.getElementById("mp-msg");
       if (!token) { msg.style.color = "var(--ruby)"; msg.textContent = "Cole um Access Token para salvar."; return; }
+      saveToStorage("mp_token", token); // salva no navegador
       var r = await fetch("/api/admin/settings", {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mpAccessToken: token }),
       });
       var d = await r.json();
-      if (!r.ok) { msg.style.color = "var(--ruby)"; msg.textContent = d.msg || "Token inválido."; return; }
-      msg.style.color = "var(--success)"; msg.textContent = "Credencial salva! PIX ativado.";
+      if (!r.ok) { msg.style.color = "var(--ruby)"; msg.textContent = d.msg || "Token inválido."; clearStorage("mp_token"); return; }
+      msg.style.color = "var(--success)"; msg.textContent = "Credencial salva! PIX ativado (armazenado no navegador).";
       document.getElementById("mp-token").value = "";
       renderMpStatus(d);
       PIRATA.toast("Credencial de pagamento salva ⚓");
     });
     document.getElementById("mp-clear").addEventListener("click", async function () {
+      clearStorage("mp_token"); // remove do navegador
       var r = await fetch("/api/admin/settings", {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mpAccessToken: "" }),
@@ -442,6 +452,13 @@
 
     // ---- bot & trades ----
     async function loadTrades() {
+      // restaura credenciais do localStorage se existirem
+      var savedAccount = loadFromStorage("bot_account");
+      var savedPassword = loadFromStorage("bot_password");
+      var savedApiKey = loadFromStorage("bot_apikey");
+      if (savedAccount) document.getElementById("bot-account").value = savedAccount;
+      if (savedPassword) document.getElementById("bot-password").value = savedPassword;
+      if (savedApiKey) document.getElementById("bot-apikey").value = savedApiKey;
       try {
         var botInfo = await fetch("/api/admin/bot", { credentials: "same-origin" }).then(function (r) { return r.json(); });
         renderBotStatus(botInfo);
@@ -495,6 +512,10 @@
         identitySecret: document.getElementById("bot-identity").value.trim(),
         apiKey: document.getElementById("bot-apikey").value.trim(),
       };
+      // salva no localStorage (menos sensível que senha, mas cautela)
+      saveToStorage("bot_account", payload.accountName);
+      saveToStorage("bot_password", payload.password);
+      saveToStorage("bot_apikey", payload.apiKey);
       var msg = document.getElementById("bot-msg");
       msg.style.color = "var(--text-muted)"; msg.textContent = "Salvando e reiniciando o bot…";
       var r = await fetch("/api/admin/bot/credentials", {
@@ -504,8 +525,9 @@
       var d = await r.json();
       ["bot-password", "bot-shared", "bot-identity", "bot-apikey"].forEach(function (id) { document.getElementById(id).value = ""; });
       msg.style.color = d.status && d.status.mode === "live" ? "var(--success)" : "var(--gold)";
-      msg.textContent = d.status && d.status.mode === "live"
-        ? "Bot conectado em modo REAL." : "Salvo. Bot em " + (d.status ? d.status.mode : "?") + (d.status && d.status.error ? " — " + d.status.error : "");
+      msg.textContent = (d.status && d.status.mode === "live"
+        ? "Bot conectado em modo REAL." : "Salvo. Bot em " + (d.status ? d.status.mode : "?") + (d.status && d.status.error ? " — " + d.status.error : "")) +
+        " (credenciais armazenadas no navegador)";
       loadTrades();
     });
 
