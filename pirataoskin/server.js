@@ -69,6 +69,13 @@ function getBotConfig() {
 }
 const bot = new SteamBot(getBotConfig());
 
+// Persiste refresh token do bot para logins futuros sem senha.
+bot.on("refreshToken", (token) => {
+  db.settings.botSteam = db.settings.botSteam || {};
+  db.settings.botSteam.refreshToken = token;
+  saveDB();
+});
+
 // Mapeia mudanças de oferta -> estado do pedido (libera valor só após confirmação).
 bot.on("offer", (ev) => {
   const order = db.orders.find((o) => o.offerId && String(o.offerId) === String(ev.offerId));
@@ -560,6 +567,12 @@ app.post("/api/admin/bot/credentials", requireAdmin, async (req, res) => {
   bot.configure(getBotConfig());
   try { await bot.start(); } catch (e) {}
   res.json({ ok: true, status: bot.status() });
+});
+app.post("/api/admin/bot/guardcode", requireAdmin, (req, res) => {
+  const code = (req.body && req.body.code) || "";
+  if (!code) return res.status(400).json({ error: "sem_codigo" });
+  const result = bot.submitGuardCode(code);
+  res.json(result);
 });
 // liberar pagamento de uma venda (após confirmar recebimento da skin)
 app.post("/api/admin/orders/:id/payout", requireAdmin, (req, res) => {

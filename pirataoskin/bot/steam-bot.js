@@ -26,22 +26,29 @@ class SteamBot extends EventEmitter {
 
   configure(cfg) { this.cfg = { ...this.cfg, ...(cfg || {}) }; }
 
+  // Para subir em modo real basta apiKey + (refreshToken OU conta+senha).
+  // shared_secret e identity_secret são OPCIONAIS (apenas automatizam 2FA/confirmação).
   isConfigured() {
     const c = this.cfg || {};
-    return !!(c.accountName && c.password && c.sharedSecret && c.identitySecret && c.apiKey);
+    return !!(c.apiKey && (c.refreshToken || (c.accountName && c.password)));
   }
 
   status() {
+    const c = this.cfg || {};
     return {
       mode: this.mode,
       online: this.online,
       steamid: this.steamid,
       configured: this.isConfigured(),
+      needsGuardCode: !!this._needsGuard,
+      guardWrong: !!this._guardWrong,
+      autoLogin: !!(c.refreshToken || c.sharedSecret),
+      autoConfirm: !!c.identitySecret,
       error: this.lastError,
     };
   }
 
-  /* ---------- inicialização ---------- */
+  /* ---------- inicialização (não-bloqueante) ---------- */
   async start() {
     if (!this.isConfigured()) {
       this.mode = "simulation";
@@ -49,61 +56,106 @@ class SteamBot extends EventEmitter {
       this.steamid = this.cfg.botSteamId || null;
       this.emit("status", this.status());
       console.log("[bot] modo SIMULAÇÃO (sem credenciais).");
-      return;
+      return this.status();
     }
+    this.lastError = null;
     try {
-      await this._startLive();
+      this._setupLive(); // dispara o login; a transição p/ live ocorre via eventos
+      if (this.mode !== "live") this.mode = "connecting";
     } catch (e) {
       this.lastError = e.message;
       this.mode = "simulation";
       this.online = true;
       console.error("[bot] falha ao iniciar modo real, caindo p/ simulação:", e.message);
-      this.emit("status", this.status());
     }
+    this.emit("status", this.status());
+    return this.status();
   }
 
-  async _startLive() {
+  // Submete o código do Steam Guard pedido durante o login (modo sem shared_secret).
+  submitGuardCode(code) {
+    if (!this._guardCallback) return { ok: false, error: "sem_pedido_de_codigo" };
+    const cb = this._guardCallback;
+    this._guardCallback = null;
+    this._needsGuard = false;
+    try { cb(String(code).trim()); } catch (e) { return { ok: false, error: e.message }; }
+    return { ok: true };
+  }
+
+  _setupLive() {
     const SteamUser = require("steam-user");
     const SteamCommunity = require("steamcommunity");
     const TradeOfferManager = require("steam-tradeoffer-manager");
     const SteamTotp = require("steam-totp");
+
+    // encerra sessão anterior, se houver (re-config)
+    if (this._lib && this._lib.client) { try { this._lib.client.logOff(); } catch (e) {} }
 
     const client = new SteamUser();
     const community = new SteamCommunity();
     const manager = new TradeOfferManager({ steam: client, community, language: "en", pollInterval: 10000 });
     this._lib = { client, community, manager, SteamTotp, TradeOfferManager };
 
-    await new Promise((resolve, reject) => {
-      const onError = (err) => reject(err);
-      client.once("error", onError);
-      client.logOn({
-        accountName: this.cfg.accountName,
-        password: this.cfg.password,
-        twoFactorCode: SteamTotp.generateAuthCode(this.cfg.sharedSecret),
-      });
-      client.once("loggedOn", () => {
-        client.removeListener("error", onError);
-        client.setPersona(1); // online
-        this.steamid = client.steamID ? client.steamID.getSteamID64() : null;
-      });
-      client.once("webSession", (sessionID, cookies) => {
-        manager.setCookies(cookies, (err) => {
-          if (err) return reject(err);
-          community.setCookies(cookies);
-          this.mode = "live";
-          this.online = true;
-          console.log("[bot] modo REAL ativo. SteamID:", this.steamid);
-          this.emit("status", this.status());
-          resolve();
-        });
+    // guarda refresh token p/ próximos logins sem senha
+    client.on("refreshToken", (token) => {
+      this.cfg.refreshToken = token;
+      this.emit("refreshToken", token);
+      console.log("[bot] refresh token salvo (logins futuros dispensam senha).");
+    });
+
+    // pede código do Steam Guard quando não há shared_secret
+    client.on("steamGuard", (domain, callback, lastWrong) => {
+      if (this.cfg.sharedSecret) {
+        try { return callback(SteamTotp.generateAuthCode(this.cfg.sharedSecret)); } catch (e) {}
+      }
+      this._needsGuard = true;
+      this._guardCallback = callback;
+      this._guardWrong = !!lastWrong;
+      this.emit("status", this.status());
+      console.log("[bot] aguardando código do Steam Guard (informe no painel).");
+    });
+
+    client.on("error", (err) => {
+      this.lastError = err.message;
+      this.online = false;
+      if (this.mode !== "live") this.mode = "simulation";
+      console.error("[bot] erro de conexão:", err.message);
+      this.emit("status", this.status());
+    });
+
+    client.on("loggedOn", () => {
+      this._needsGuard = false;
+      this._guardCallback = null;
+      this._guardWrong = false;
+      client.setPersona(1);
+      this.steamid = client.steamID ? client.steamID.getSteamID64() : null;
+    });
+
+    client.on("webSession", (sessionID, cookies) => {
+      manager.setCookies(cookies, (err) => {
+        if (err) { this.lastError = err.message; this.emit("status", this.status()); return; }
+        community.setCookies(cookies);
+        this.mode = "live";
+        this.online = true;
+        this.lastError = null;
+        console.log("[bot] modo REAL ativo. SteamID:", this.steamid);
+        this.emit("status", this.status());
       });
     });
 
-    // mudanças nas ofertas que ENVIAMOS (entrega ao comprador / pedido ao vendedor)
     manager.on("sentOfferChanged", (offer) => {
       const state = this._lib.TradeOfferManager.ETradeOfferState[offer.state];
       this.emit("offer", { offerId: String(offer.id), state: this._normalizeState(state), raw: state, partner: offer.partner && offer.partner.getSteamID64() });
     });
+
+    // login
+    const opts = this.cfg.refreshToken
+      ? { refreshToken: this.cfg.refreshToken }
+      : { accountName: this.cfg.accountName, password: this.cfg.password };
+    if (!this.cfg.refreshToken && this.cfg.sharedSecret) {
+      try { opts.twoFactorCode = SteamTotp.generateAuthCode(this.cfg.sharedSecret); } catch (e) {}
+    }
+    client.logOn(opts);
   }
 
   _normalizeState(s) {

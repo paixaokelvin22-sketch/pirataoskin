@@ -76,12 +76,22 @@
         <div class="panel" style="margin-bottom:1.2rem">
           <h3 class="display">Status do bot Steam</h3>
           <div id="bot-status" style="margin-bottom:1rem">Carregando…</div>
+          <div id="guard-code-box" style="display:none;background:var(--bg-elev-2);border:2px solid var(--gold);border-radius:.6rem;padding:1rem;margin-bottom:1rem">
+            <div style="font-weight:600;color:var(--gold);margin-bottom:.5rem">🔐 Código do Steam Guard necessário</div>
+            <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 .6rem">O bot está aguardando o código do Steam Guard. Verifique seu e-mail ou app do Steam e cole abaixo.</p>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input id="guard-code" maxlength="5" placeholder="XXXXX" style="width:100px;text-align:center;font-size:1.2rem;letter-spacing:.3em;font-family:monospace" autocomplete="off" />
+              <button class="btn btn-gold btn-sm" id="guard-submit">Enviar código</button>
+            </div>
+            <p id="guard-msg" style="font-size:.82rem;margin-top:.5rem"></p>
+          </div>
           <details>
             <summary style="cursor:pointer;color:var(--gold);font-weight:600">Configurar credenciais do bot</summary>
             <div style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:.6rem;padding:.8rem 1rem;margin:.8rem 0;font-size:.85rem;color:var(--text-muted)">
-              ⚠️ Sem credenciais o bot opera em <b>SIMULAÇÃO</b>. Para modo real informe a conta do bot,
-              senha, <b>shared_secret</b> e <b>identity_secret</b> (do Steam Mobile Authenticator) e a
-              <b>API key</b> (steamcommunity.com/dev/apikey). Os segredos ficam só no servidor.
+              ⚠️ Sem credenciais o bot opera em <b>SIMULAÇÃO</b>. Para modo real informe a <b>conta</b>,
+              <b>senha</b> e a <b>API key</b> (steamcommunity.com/dev/apikey).<br>
+              O <b>shared_secret</b> e <b>identity_secret</b> são <b>opcionais</b> — sem eles, o bot pede
+              o código do Steam Guard manualmente (campo acima) e salva um refresh token para logins futuros.
             </div>
             <div class="field"><label>Conta (login)</label><input id="bot-account" autocomplete="off" /></div>
             <div class="field"><label>Senha</label><input id="bot-password" type="password" autocomplete="off" /></div>
@@ -315,15 +325,29 @@
       var s = info.status || {};
       var c = info.credentials || {};
       var modeTag = s.mode === "live"
-        ? '<span class="pill paid">REAL (live)</span>' : '<span class="pill pending">SIMULAÇÃO</span>';
+        ? '<span class="pill paid">REAL (live)</span>'
+        : s.mode === "connecting"
+        ? '<span class="pill pending">CONECTANDO…</span>'
+        : '<span class="pill pending">SIMULAÇÃO</span>';
       var creds = ["accountName", "hasPassword", "hasSharedSecret", "hasIdentitySecret", "hasApiKey"]
         .map(function (k) { return (k === "accountName" ? !!c.accountName : c[k]) ? "✅" : "❌"; });
+      var extras = [];
+      if (s.autoLogin) extras.push("login automático ✅");
+      if (s.autoConfirm) extras.push("confirmação automática ✅");
       document.getElementById("bot-status").innerHTML =
         modeTag + ' <span style="color:var(--text-muted)">online: ' + (s.online ? "sim" : "não") +
         " · SteamID: " + (s.steamid || "—") + (s.error ? " · erro: " + s.error : "") + "</span>" +
         '<div style="color:var(--text-muted);font-size:.82rem;margin-top:.5rem">Credenciais — conta ' + creds[0] +
-        " · senha " + creds[1] + " · shared " + creds[2] + " · identity " + creds[3] + " · apiKey " + creds[4] + "</div>";
+        " · senha " + creds[1] + " · shared " + creds[2] + " · identity " + creds[3] + " · apiKey " + creds[4] +
+        (extras.length ? " · " + extras.join(" · ") : "") + "</div>";
       if (c.accountName) document.getElementById("bot-account").placeholder = c.accountName + " (configurado)";
+      // mostrar/esconder campo de código do guard
+      var guardBox = document.getElementById("guard-code-box");
+      guardBox.style.display = s.needsGuardCode ? "" : "none";
+      if (s.guardWrong) {
+        document.getElementById("guard-msg").style.color = "var(--ruby)";
+        document.getElementById("guard-msg").textContent = "Código incorreto. Tente novamente.";
+      }
     }
 
     function renderTrades(orders, botStatus) {
@@ -390,6 +414,26 @@
       msg.textContent = d.status && d.status.mode === "live"
         ? "Bot conectado em modo REAL." : "Salvo. Bot em " + (d.status ? d.status.mode : "?") + (d.status && d.status.error ? " — " + d.status.error : "");
       loadTrades();
+    });
+
+    document.getElementById("guard-submit").addEventListener("click", async function () {
+      var code = document.getElementById("guard-code").value.trim();
+      var msg = document.getElementById("guard-msg");
+      if (!code) { msg.style.color = "var(--ruby)"; msg.textContent = "Digite o código."; return; }
+      msg.style.color = "var(--text-muted)"; msg.textContent = "Enviando…";
+      var r = await fetch("/api/admin/bot/guardcode", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }),
+      });
+      var d = await r.json();
+      document.getElementById("guard-code").value = "";
+      if (d.ok) {
+        msg.style.color = "var(--success)"; msg.textContent = "Código enviado! Aguardando login…";
+        PIRATA.toast("Código do Steam Guard enviado ⚓");
+        setTimeout(loadTrades, 3000);
+      } else {
+        msg.style.color = "var(--ruby)"; msg.textContent = d.error || "Falha ao enviar código.";
+      }
     });
 
     document.getElementById("refresh").addEventListener("click", loadAll);
