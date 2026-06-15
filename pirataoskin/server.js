@@ -663,7 +663,17 @@ app.post("/api/admin/users/:steamid/admin", requireAdmin, (req, res) => {
 });
 
 /* ---------- estaticos ---------- */
+// HTML/JS/CSS nunca cacheados (evita ficar preso em versao antiga apos deploy)
+app.use((req, res, next) => {
+  if (/\.(html|js|css)$/.test(req.path) || req.path === "/") {
+    res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  }
+  next();
+});
 app.use(express.static(ROOT, { extensions: ["html"] }));
+
+// healthcheck simples (mostra versao no ar — util p/ confirmar deploy)
+app.get("/version", (req, res) => res.json({ version: "2026-06-15-history", ok: true }));
 
 app.listen(PORT, () => {
   console.log("PIRATAOSKIN (backend real) em http://localhost:" + PORT);
