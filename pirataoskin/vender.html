@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vender skins — PIRATAOSKIN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <div class="wrap crumb"><a href="index.html">Início</a> / Vender</div>
+
+  <section class="section wrap">
+    <div class="section-head">
+      <div><h2 class="display">Venda suas skins e receba no Pix 💰</h2>
+      <p class="sub">Inventário real da Steam. Preços reais do mercado. Você recebe 85% do valor.</p></div>
+    </div>
+
+    <div class="cart-layout" style="padding:0">
+      <div>
+        <div class="panel" id="connect-panel">
+          <h3 class="display">1. Conecte seu inventário Steam</h3>
+          <p id="auth-hint" style="color:var(--text-muted);font-size:.9rem;margin-top:0">
+            Entre com a Steam para carregar seu inventário automaticamente, ou informe um SteamID64.
+          </p>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">
+            <a class="btn btn-gold" id="login-btn" href="/auth/steam">Entrar com Steam</a>
+            <span style="color:var(--text-muted)">ou</span>
+            <div class="field" style="flex:1;min-width:220px;margin:0">
+              <label>SteamID64 ou link /profiles/&lt;id&gt;</label>
+              <input id="steamid-input" placeholder="7656119xxxxxxxxxx" />
+            </div>
+            <button class="btn btn-soft" id="load-inv">Carregar inventário</button>
+          </div>
+          <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:0">
+            ⚠️ Seu inventário de CS2 precisa estar <b>público</b> nas configurações de privacidade da Steam.
+          </p>
+        </div>
+
+        <div class="panel" id="inv-panel" style="display:none">
+          <h3 class="display">2. Selecione as skins para vender</h3>
+          <p id="inv-status" style="color:var(--text-muted);font-size:.9rem"></p>
+          <div class="grid" id="inv-grid" style="grid-template-columns:repeat(2,1fr)"></div>
+        </div>
+      </div>
+
+      <aside class="summary">
+        <h3 class="display">Oferta</h3>
+        <div class="srow"><span>Skins selecionadas</span><span id="sell-count">0</span></div>
+        <div class="srow"><span>Valor de mercado</span><span id="sell-market">R$ 0,00</span></div>
+        <div class="srow total"><span>Você recebe (85%)</span><b id="sell-total">R$ 0,00</b></div>
+        <div class="note">💸 Preços puxados em tempo real do Steam Market (BRL). Pagamento via Pix.</div>
+        <div class="field"><label>Sua chave Pix</label><input placeholder="CPF, e-mail, telefone ou aleatória" /></div>
+        <button class="btn btn-gold btn-block" id="sell-btn">Receber via Pix</button>
+      </aside>
+    </div>
+  </section>
+
+  <div id="site-footer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/site.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var selected = new Map(); // assetid -> { item, price }
+    var items = [];
+
+    // Se já estiver logado, ajusta o texto do botão.
+    document.addEventListener("auth:change", function (e) {
+      var u = e.detail;
+      if (u) {
+        document.getElementById("login-btn").textContent = "Carregar meu inventário";
+        document.getElementById("login-btn").href = "javascript:void(0)";
+        document.getElementById("login-btn").onclick = function () { doLoad(null); };
+        document.getElementById("auth-hint").textContent = "Logado como " + u.name + " (" + u.steamid + ").";
+      }
+    });
+
+    document.getElementById("load-inv").addEventListener("click", function () {
+      var raw = document.getElementById("steamid-input").value;
+      var id = PIRATA.parseSteamId(raw);
+      if (!id) { PIRATA.toast("Informe um SteamID64 válido (17 dígitos) ou entre com a Steam."); return; }
+      doLoad(id);
+    });
+
+    async function doLoad(steamid) {
+      var panel = document.getElementById("inv-panel");
+      var status = document.getElementById("inv-status");
+      panel.style.display = "";
+      status.textContent = "Carregando inventário real da Steam...";
+      document.getElementById("inv-grid").innerHTML = "";
+      selected.clear(); updateOffer();
+
+      var res;
+      try { res = await PIRATA.loadInventory(steamid); }
+      catch (e) { status.textContent = "Falha ao contatar a Steam."; return; }
+
+      if (res.error === "steamid_invalido") { status.textContent = "Entre com a Steam ou informe um SteamID64 válido."; return; }
+      if (res.error === "private") { status.textContent = "❌ Esse inventário está privado. Deixe-o público nas configurações da Steam."; return; }
+      if (res.error || !res.items || !res.items.length) { status.textContent = "Nenhum item de CS2 encontrado neste inventário."; return; }
+
+      items = res.items;
+      status.textContent = res.count + " itens encontrados. Clique para selecionar (o preço é buscado no mercado).";
+      renderItems();
+    }
+
+    function renderItems() {
+      var grid = document.getElementById("inv-grid");
+      grid.innerHTML = items.map(function (it, i) {
+        return '<div style="cursor:pointer" data-i="' + i + '">' + PIRATA.inventoryCardHTML(it) + '</div>';
+      }).join("");
+      grid.querySelectorAll("[data-i]").forEach(function (el) {
+        el.addEventListener("click", function () { toggle(el, items[el.dataset.i]); });
+      });
+    }
+
+    async function toggle(el, it) {
+      var card = el.querySelector(".card");
+      var tag = el.querySelector(".sel-tag");
+      var priceEl = el.querySelector("[data-price]");
+      if (selected.has(it.assetid)) {
+        selected.delete(it.assetid);
+        card.style.outline = ""; tag.textContent = "Selecionar"; tag.classList.add("btn-soft"); tag.classList.remove("btn-gold");
+        updateOffer();
+        return;
+      }
+      selected.set(it.assetid, { item: it, price: null });
+      card.style.outline = "2px solid var(--gold)";
+      tag.textContent = "Selecionada ✓"; tag.classList.remove("btn-soft"); tag.classList.add("btn-gold");
+
+      // busca preço real
+      priceEl.textContent = "...";
+      var p = await PIRATA.fetchPrice(it.market_hash_name);
+      var val = p && (p.lowest || p.median) ? PIRATA.parseBRL(p.lowest || p.median) : null;
+      priceEl.textContent = val != null ? PIRATA.brl(val) : "s/ preço";
+      if (selected.has(it.assetid)) selected.get(it.assetid).price = val;
+      updateOffer();
+    }
+
+    function updateOffer() {
+      var market = 0;
+      selected.forEach(function (v) { market += v.price || 0; });
+      document.getElementById("sell-count").textContent = selected.size;
+      document.getElementById("sell-market").textContent = PIRATA.brl(market);
+      document.getElementById("sell-total").textContent = PIRATA.brl(market * 0.85);
+    }
+
+    document.getElementById("sell-btn").addEventListener("click", function () {
+      if (!selected.size) { PIRATA.toast("Selecione ao menos uma skin para vender."); return; }
+      PIRATA.toast("⚓ Oferta registrada! (Integração de pagamento Pix é o próximo passo.)");
+    });
+  });
+  </script>
+</body>
+</html>

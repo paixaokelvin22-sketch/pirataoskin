@@ -1,0 +1,10 @@
+{
+  "_comment": "Copie para config.local.json (que NAO vai pro Git) e preencha. O servidor le config.local.json se existir, senao este exemplo.",
+  "adminSteamIds": ["76561198119702405"],
+  "storeSteamId": "76561198119702405",
+  "mercadoPago": {
+    "accessToken": "",
+    "webhookSecret": ""
+  },
+  "payerEmailFallback": "comprador@pirataoskin.com"
+}

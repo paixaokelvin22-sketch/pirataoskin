@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+.env
+config.local.json
+# dados de runtime gerados pelo servidor (banco JSON + cache de preços)
+pirataoskin/data/

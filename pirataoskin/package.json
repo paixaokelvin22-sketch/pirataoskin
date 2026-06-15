@@ -1,0 +1,14 @@
+{
+  "name": "pirataoskin",
+  "version": "1.0.0",
+  "description": "Marketplace de skins de CS2 (PIRATAOSKIN) com login real via Steam e inventario real.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
+  }
+}

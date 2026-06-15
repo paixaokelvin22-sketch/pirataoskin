@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upgrade de skins — PIRATAOSKIN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <div class="wrap crumb"><a href="index.html">Início</a> / Upgrade</div>
+
+  <section class="section wrap">
+    <div class="section-head">
+      <div><h2 class="display">Upgrade: suba de nível no arsenal ⚔️</h2>
+      <p class="sub">Dê de entrada skins reais do seu inventário e pague só a diferença pela skin desejada.</p></div>
+    </div>
+
+    <div class="cart-layout" style="padding:0">
+      <div>
+        <div class="panel">
+          <h3 class="display">1. Conecte e escolha o que dar de entrada</h3>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem">
+            <a class="btn btn-gold" id="login-btn" href="/auth/steam">Entrar com Steam</a>
+            <span style="color:var(--text-muted)">ou</span>
+            <div class="field" style="flex:1;min-width:200px;margin:0">
+              <label>SteamID64</label><input id="steamid-input" placeholder="7656119xxxxxxxxxx" />
+            </div>
+            <button class="btn btn-soft" id="load-inv">Carregar</button>
+          </div>
+          <p id="inv-status" style="color:var(--text-muted);font-size:.9rem"></p>
+          <div class="grid" id="give-grid" style="grid-template-columns:repeat(2,1fr)"></div>
+        </div>
+        <div class="panel">
+          <h3 class="display">2. Skin que você quer (catálogo da loja)</h3>
+          <div class="field">
+            <label>Escolha o tesouro</label>
+            <select id="want" class="select" style="width:100%"></select>
+          </div>
+          <div id="want-preview"></div>
+        </div>
+      </div>
+
+      <aside class="summary">
+        <h3 class="display">Resumo do upgrade</h3>
+        <div class="srow"><span>Crédito das suas skins (85%)</span><span id="up-credit">R$ 0,00</span></div>
+        <div class="srow"><span>Skin desejada</span><span id="up-target">R$ 0,00</span></div>
+        <div class="srow total"><span id="up-label">Diferença a pagar</span><b id="up-diff">R$ 0,00</b></div>
+        <div class="note">⚔️ Preços de entrada puxados em tempo real do Steam Market (BRL).</div>
+        <button class="btn btn-gold btn-block" id="up-btn">Confirmar upgrade</button>
+      </aside>
+    </div>
+  </section>
+
+  <div id="site-footer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/site.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var give = new Map(); // assetid -> { item, price }
+    var items = [];
+
+    document.addEventListener("auth:change", function (e) {
+      var u = e.detail;
+      if (u) {
+        var b = document.getElementById("login-btn");
+        b.textContent = "Carregar meu inventário"; b.href = "javascript:void(0)";
+        b.onclick = function () { doLoad(null); };
+      }
+    });
+
+    document.getElementById("load-inv").addEventListener("click", function () {
+      var id = PIRATA.parseSteamId(document.getElementById("steamid-input").value);
+      if (!id) { PIRATA.toast("Informe um SteamID64 válido ou entre com a Steam."); return; }
+      doLoad(id);
+    });
+
+    async function doLoad(steamid) {
+      var status = document.getElementById("inv-status");
+      status.textContent = "Carregando inventário real da Steam...";
+      document.getElementById("give-grid").innerHTML = "";
+      give.clear(); update();
+      var res;
+      try { res = await PIRATA.loadInventory(steamid); }
+      catch (e) { status.textContent = "Falha ao contatar a Steam."; return; }
+      if (res.error === "private") { status.textContent = "❌ Inventário privado. Deixe-o público na Steam."; return; }
+      if (res.error || !res.items || !res.items.length) { status.textContent = "Nenhum item de CS2 encontrado."; return; }
+      items = res.items;
+      status.textContent = res.count + " itens. Clique para dar de entrada (preço buscado no mercado).";
+      renderItems();
+    }
+
+    function renderItems() {
+      var gg = document.getElementById("give-grid");
+      gg.innerHTML = items.map(function (it, i) {
+        return '<div style="cursor:pointer" data-i="' + i + '">' +
+          PIRATA.inventoryCardHTML(it).replace("Selecionar", "Dar de entrada") + '</div>';
+      }).join("");
+      gg.querySelectorAll("[data-i]").forEach(function (el) {
+        el.addEventListener("click", function () { toggle(el, items[el.dataset.i]); });
+      });
+    }
+
+    async function toggle(el, it) {
+      var card = el.querySelector(".card"), tag = el.querySelector(".sel-tag"), priceEl = el.querySelector("[data-price]");
+      if (give.has(it.assetid)) {
+        give.delete(it.assetid); card.style.outline = ""; tag.textContent = "Dar de entrada";
+        tag.classList.add("btn-soft"); tag.classList.remove("btn-gold"); update(); return;
+      }
+      give.set(it.assetid, { item: it, price: null });
+      card.style.outline = "2px solid var(--gold)"; tag.textContent = "Na troca ✓";
+      tag.classList.remove("btn-soft"); tag.classList.add("btn-gold");
+      priceEl.textContent = "...";
+      var p = await PIRATA.fetchPrice(it.market_hash_name);
+      var val = p && (p.lowest || p.median) ? PIRATA.parseBRL(p.lowest || p.median) : null;
+      priceEl.textContent = val != null ? PIRATA.brl(val) : "s/ preço";
+      if (give.has(it.assetid)) give.get(it.assetid).price = val;
+      update();
+    }
+
+    // skins desejadas: catálogo da loja (mais caras primeiro)
+    var targets = PIRATA.D.skins.slice().sort(function (a, b) { return b.preco - a.preco; }).slice(0, 8);
+    var sel = document.getElementById("want");
+    sel.innerHTML = targets.map(function (s) {
+      return '<option value="' + s.id + '">' + s.arma + ' | ' + s.skin + ' — ' + PIRATA.brl(s.preco) + '</option>';
+    }).join("");
+    sel.addEventListener("change", function () { renderPreview(); update(); });
+
+    function renderPreview() {
+      var s = PIRATA.skinById(sel.value);
+      document.getElementById("want-preview").innerHTML =
+        '<div class="grid" style="grid-template-columns:1fr;max-width:220px;margin-top:1rem">' +
+        PIRATA.cardHTML(s).replace(/<button class="btn btn-gold btn-sm".*?<\/button>/, '') + '</div>';
+    }
+
+    function update() {
+      var credit = 0;
+      give.forEach(function (v) { credit += v.price || 0; });
+      credit = credit * 0.85;
+      var target = PIRATA.skinById(sel.value).preco;
+      var diff = target - credit;
+      document.getElementById("up-credit").textContent = PIRATA.brl(credit);
+      document.getElementById("up-target").textContent = PIRATA.brl(target);
+      var label = document.getElementById("up-label"), diffEl = document.getElementById("up-diff");
+      if (diff >= 0) { label.textContent = "Diferença a pagar"; diffEl.textContent = PIRATA.brl(diff); diffEl.style.color = "var(--gold)"; }
+      else { label.textContent = "Você recebe de volta"; diffEl.textContent = PIRATA.brl(-diff); diffEl.style.color = "var(--success)"; }
+    }
+
+    document.getElementById("up-btn").addEventListener("click", function () {
+      if (!give.size) { PIRATA.toast("Escolha ao menos uma skin para dar de entrada."); return; }
+      PIRATA.toast("⚔️ Upgrade registrado! (Integração de troca/pagamento é o próximo passo.)");
+    });
+
+    renderPreview(); update();
+  });
+  </script>
+</body>
+</html>

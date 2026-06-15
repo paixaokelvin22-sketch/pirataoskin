@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel Admin — PIRATAOSKIN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;margin-bottom:1.5rem}
+    @media(min-width:760px){.kpis{grid-template-columns:repeat(4,1fr)}}
+    .kpi{background:var(--bg-elev);border:1px solid var(--border);border-radius:.8rem;padding:1.1rem}
+    .kpi .v{font-family:'Cinzel',serif;font-size:1.7rem;color:var(--gold);line-height:1}
+    .kpi .l{color:var(--text-muted);font-size:.82rem;margin-top:.4rem}
+    .admin-tabs{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap}
+    .admin-tabs .tab{flex:0 0 auto;padding:.6rem 1rem}
+    table{width:100%;border-collapse:collapse;font-size:.88rem}
+    th,td{text-align:left;padding:.6rem .5rem;border-bottom:1px solid var(--border)}
+    th{color:var(--text-muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+    .tablewrap{background:var(--bg-elev);border:1px solid var(--border);border-radius:.8rem;padding:.6rem 1rem;overflow-x:auto}
+    .pill{font-size:.72rem;font-weight:700;padding:.18rem .5rem;border-radius:1rem}
+    .pill.paid{background:rgba(61,214,140,.18);color:var(--success)}
+    .pill.pending{background:rgba(255,194,51,.18);color:var(--gold)}
+    .pill.canceled{background:rgba(226,58,78,.18);color:var(--ruby)}
+    .gate{text-align:center;padding:5rem 1rem;color:var(--text-muted)}
+  </style>
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <div class="wrap crumb"><a href="index.html">Início</a> / Admin</div>
+
+  <main class="wrap section" id="admin-root">
+    <div class="gate" id="gate"><div style="font-size:3rem">🔒</div><p>Verificando acesso…</p></div>
+
+    <div id="admin-content" style="display:none">
+      <div class="section-head"><div><h2 class="display">Painel do Capitão ⚓</h2>
+        <p class="sub">Gestão de usuários e financeiro do PIRATAOSKIN.</p></div>
+        <button class="btn btn-soft btn-sm" id="refresh">↻ Atualizar</button>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="admin-tabs">
+        <div class="tab on" data-tab="finance">💰 Financeiro</div>
+        <div class="tab" data-tab="orders">🧾 Pedidos</div>
+        <div class="tab" data-tab="users">👥 Usuários</div>
+      </div>
+
+      <section id="tab-finance">
+        <div class="tablewrap"><table>
+          <thead><tr><th>Pedido</th><th>Comprador</th><th>Itens</th><th>Total</th><th>Status</th><th>Data</th></tr></thead>
+          <tbody id="finance-rows"></tbody>
+        </table></div>
+      </section>
+
+      <section id="tab-orders" style="display:none">
+        <div class="tablewrap"><table>
+          <thead><tr><th>Pedido</th><th>Comprador</th><th>Total</th><th>Método</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="orders-rows"></tbody>
+        </table></div>
+      </section>
+
+      <section id="tab-users" style="display:none">
+        <div class="tablewrap"><table>
+          <thead><tr><th>Avatar</th><th>Nome</th><th>SteamID</th><th>Logins</th><th>Último acesso</th><th>Admin</th></tr></thead>
+          <tbody id="users-rows"></tbody>
+        </table></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/site.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var brl = PIRATA.brl;
+
+    function fmtDate(s) {
+      if (!s) return "—";
+      try { return new Date(s).toLocaleString("pt-BR"); } catch { return s; }
+    }
+
+    async function boot() {
+      var user = await PIRATA.refreshAuth();
+      var gate = document.getElementById("gate");
+      if (!user) {
+        gate.innerHTML = '<div style="font-size:3rem">🔒</div><p>Faça login para acessar.</p>' +
+          '<a class="btn btn-gold" href="/auth/steam" style="margin-top:1rem">Entrar com Steam</a>';
+        return;
+      }
+      if (!user.admin) {
+        gate.innerHTML = '<div style="font-size:3rem">⛔</div><p>Acesso restrito. Sua conta não é administradora.</p>';
+        return;
+      }
+      gate.style.display = "none";
+      document.getElementById("admin-content").style.display = "";
+      loadAll();
+    }
+
+    async function loadAll() {
+      var [summary, orders, users] = await Promise.all([
+        fetch("/api/admin/summary", { credentials: "same-origin" }).then((r) => r.json()),
+        fetch("/api/admin/orders", { credentials: "same-origin" }).then((r) => r.json()),
+        fetch("/api/admin/users", { credentials: "same-origin" }).then((r) => r.json()),
+      ]);
+      renderKpis(summary);
+      renderOrders(orders.orders || []);
+      renderUsers(users.users || []);
+    }
+
+    function renderKpis(s) {
+      document.getElementById("kpis").innerHTML =
+        kpi(brl(s.revenue || 0), "Receita confirmada") +
+        kpi(brl(s.pendingValue || 0), "A receber (pendente)") +
+        kpi(s.paidCount + " / " + s.orders, "Pedidos pagos / total") +
+        kpi(s.users, "Usuários cadastrados");
+    }
+    function kpi(v, l) { return '<div class="kpi"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
+
+    function statusPill(st) {
+      var label = st === "paid" ? "Pago" : st === "canceled" ? "Cancelado" : "Pendente";
+      return '<span class="pill ' + st + '">' + label + '</span>';
+    }
+
+    function renderOrders(orders) {
+      document.getElementById("finance-rows").innerHTML = orders.length ? orders.map(function (o) {
+        return "<tr><td>" + o.id + "</td><td>" + (o.buyer || "—") + "</td><td>" + o.items.length +
+          "</td><td class='tnum'>" + brl(o.total) + "</td><td>" + statusPill(o.status) + "</td><td>" + fmtDate(o.createdAt) + "</td></tr>";
+      }).join("") : '<tr><td colspan="6" style="color:var(--text-muted)">Nenhum pedido ainda.</td></tr>';
+
+      document.getElementById("orders-rows").innerHTML = orders.length ? orders.map(function (o) {
+        var actions = o.status !== "paid"
+          ? '<button class="btn btn-soft btn-sm" data-paid="' + o.id + '">Marcar pago</button> ' : "";
+        actions += o.status !== "canceled"
+          ? '<button class="btn btn-soft btn-sm" data-cancel="' + o.id + '">Cancelar</button>' : "";
+        return "<tr><td>" + o.id + "</td><td>" + (o.buyer || "—") + "</td><td class='tnum'>" + brl(o.total) +
+          "</td><td>" + (o.method || "pix") + "</td><td>" + statusPill(o.status) + "</td><td>" + actions + "</td></tr>";
+      }).join("") : '<tr><td colspan="6" style="color:var(--text-muted)">Nenhum pedido ainda.</td></tr>';
+
+      document.querySelectorAll("[data-paid]").forEach(function (b) {
+        b.addEventListener("click", function () { setStatus(b.dataset.paid, "paid"); });
+      });
+      document.querySelectorAll("[data-cancel]").forEach(function (b) {
+        b.addEventListener("click", function () { setStatus(b.dataset.cancel, "canceled"); });
+      });
+    }
+
+    async function setStatus(id, status) {
+      await fetch("/api/admin/orders/" + id + "/status", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: status }),
+      });
+      PIRATA.toast("Pedido atualizado.");
+      loadAll();
+    }
+
+    function renderUsers(users) {
+      document.getElementById("users-rows").innerHTML = users.length ? users.map(function (u) {
+        var av = u.avatar ? '<img src="' + u.avatar + '" style="width:28px;height:28px;border-radius:50%" />' : "⚓";
+        var toggle = '<button class="btn btn-soft btn-sm" data-admin="' + u.steamid + '" data-val="' + (u.admin ? "0" : "1") + '">' +
+          (u.admin ? "Remover admin" : "Tornar admin") + "</button>";
+        return "<tr><td>" + av + "</td><td>" + u.name + "</td><td class='tnum'>" + u.steamid + "</td><td>" + (u.logins || 1) +
+          "</td><td>" + fmtDate(u.lastLogin) + "</td><td>" + (u.admin ? "✅ " : "") + toggle + "</td></tr>";
+      }).join("") : '<tr><td colspan="6" style="color:var(--text-muted)">Nenhum usuário ainda.</td></tr>';
+
+      document.querySelectorAll("[data-admin]").forEach(function (b) {
+        b.addEventListener("click", async function () {
+          await fetch("/api/admin/users/" + b.dataset.admin + "/admin", {
+            method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ admin: b.dataset.val === "1" }),
+          });
+          PIRATA.toast("Permissão atualizada."); loadAll();
+        });
+      });
+    }
+
+    // tabs
+    document.querySelectorAll(".admin-tabs .tab").forEach(function (t) {
+      t.addEventListener("click", function () {
+        document.querySelectorAll(".admin-tabs .tab").forEach(function (x) { x.classList.remove("on"); });
+        t.classList.add("on");
+        ["finance", "orders", "users"].forEach(function (name) {
+          document.getElementById("tab-" + name).style.display = name === t.dataset.tab ? "" : "none";
+        });
+      });
+    });
+
+    document.getElementById("refresh").addEventListener("click", loadAll);
+    boot();
+  });
+  </script>
+</body>
+</html>
