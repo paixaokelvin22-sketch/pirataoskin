@@ -95,6 +95,7 @@
       ["Comprar", "catalogo.html"],
       ["Vender", "vender.html"],
       ["Upgrade", "upgrade.html"],
+      ["Meu Histórico", "meu-historico.html"],
       ["FAQ", "#faq"],
     ];
   }

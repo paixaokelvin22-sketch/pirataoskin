@@ -225,6 +225,28 @@ app.get("/auth/logout", (req, res) => req.session.destroy(() => res.redirect("/"
 
 app.get("/api/me", (req, res) => res.json({ user: req.session.user || null }));
 
+app.get("/api/my-orders", requireAuth, (req, res) => {
+  const steamid = req.session.user.steamid;
+  const orders = db.orders.filter((o) => o.steamid === steamid).slice().reverse();
+  const buys = orders.filter((o) => (o.type || "buy") === "buy");
+  const sells = orders.filter((o) => o.type === "sell");
+  const totalSpent = buys.reduce((s, o) => s + (o.status === "paid" || o.status === "completed" ? o.total : 0), 0);
+  const totalEarned = sells.reduce((s, o) => s + (o.status === "paid_out" ? o.total : 0), 0);
+  res.json({
+    orders,
+    buys,
+    sells,
+    stats: {
+      totalOrders: orders.length,
+      totalBuys: buys.length,
+      totalSells: sells.length,
+      totalSpent,
+      totalEarned,
+      balance: totalEarned - totalSpent,
+    },
+  });
+});
+
 /* ---------- inventario + preco ---------- */
 function tagValue(tags, category) {
   if (!tags) return null;

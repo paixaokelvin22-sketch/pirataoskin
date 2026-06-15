@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meu Histórico — PIRATAOSKIN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: .8rem; padding: 1rem; text-align: center; }
+    .stat-card .val { font-family: 'Cinzel', serif; font-size: 1.5rem; color: var(--gold); font-weight: 700; }
+    .stat-card .lbl { color: var(--text-muted); font-size: .75rem; margin-top: .4rem; text-transform: uppercase; letter-spacing: .04em; }
+    .tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .tab { padding: .6rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; }
+    .tab:hover { color: var(--gold); }
+    .tab.on { border-bottom-color: var(--gold); color: var(--gold); }
+    .order-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: .8rem; padding: 1.2rem; margin-bottom: 1rem; }
+    .order-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: .8rem; }
+    .order-id { font-family: monospace; font-size: .85rem; color: var(--text-muted); flex: 0 0 auto; }
+    .order-type { display: inline-block; font-size: .7rem; font-weight: 700; padding: .2rem .6rem; border-radius: .4rem; text-transform: uppercase; }
+    .order-type.buy { background: rgba(61,214,140,.18); color: var(--success); }
+    .order-type.sell { background: rgba(100,149,237,.25); color: #6495ED; }
+    .order-value { font-family: 'Cinzel', serif; font-size: 1.2rem; color: var(--gold); font-weight: 700; }
+    .order-date { color: var(--text-muted); font-size: .8rem; }
+    .order-status { display: inline-block; padding: .15rem .5rem; border-radius: .4rem; font-size: .7rem; font-weight: 600; }
+    .order-status.paid { background: rgba(61,214,140,.18); color: var(--success); }
+    .order-status.pending { background: rgba(255,194,51,.18); color: var(--gold); }
+    .order-status.completed { background: rgba(61,214,140,.18); color: var(--success); }
+    .order-status.canceled { background: rgba(226,58,78,.18); color: var(--ruby); }
+    .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .8rem; margin-top: 1rem; }
+    .item { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: .6rem; padding: .6rem; text-align: center; }
+    .item img { width: 100%; height: 100px; object-fit: contain; margin-bottom: .4rem; }
+    .item .iname { font-size: .75rem; color: var(--text); margin-bottom: .2rem; line-height: 1.2; min-height: 2.2em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .item .iprice { font-family: 'Cinzel', serif; color: var(--gold); font-size: .85rem; font-weight: 600; }
+    .empty { text-align: center; padding: 2rem; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <div class="wrap crumb"><a href="index.html">Início</a> / <span>Meu Histórico</span></div>
+
+  <main class="wrap section">
+    <div style="margin-bottom:2rem">
+      <h2 class="display">Meu Histórico ⚓</h2>
+      <p class="sub">Todas as suas compras, vendas e transações na plataforma.</p>
+    </div>
+
+    <div id="auth-gate" style="display:none;text-align:center;padding:3rem;color:var(--text-muted)">
+      <div style="font-size:2rem;margin-bottom:1rem">🔒</div>
+      <p>Faça login para ver seu histórico.</p>
+      <a href="/auth/steam" class="btn btn-gold" style="margin-top:1rem;display:inline-block">Entrar com Steam</a>
+    </div>
+
+    <div id="history-content" style="display:none">
+      <!-- STATS -->
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <!-- TABS -->
+      <div class="tabs">
+        <div class="tab on" data-tab="all">📋 Todas as transações</div>
+        <div class="tab" data-tab="buys">🛒 Minhas compras</div>
+        <div class="tab" data-tab="sells">📦 Minhas vendas</div>
+      </div>
+
+      <!-- CONTEÚDO -->
+      <div id="tab-all"></div>
+      <div id="tab-buys" style="display:none"></div>
+      <div id="tab-sells" style="display:none"></div>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/site.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", async function () {
+    var brl = PIRATA.brl;
+
+    function fmtDate(s) {
+      if (!s) return "—";
+      try { return new Date(s).toLocaleString("pt-BR"); } catch { return s; }
+    }
+
+    function esc(s) {
+      var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML;
+    }
+
+    async function boot() {
+      var user = await PIRATA.refreshAuth();
+      if (!user) {
+        document.getElementById("auth-gate").style.display = "";
+        return;
+      }
+      document.getElementById("auth-gate").style.display = "none";
+      document.getElementById("history-content").style.display = "";
+      loadHistory();
+    }
+
+    async function loadHistory() {
+      try {
+        var resp = await fetch("/api/my-orders", { credentials: "same-origin" }).then(function (r) { return r.json(); });
+        renderStats(resp.stats);
+        renderOrders(resp.orders, "all");
+        renderOrders(resp.buys, "buys");
+        renderOrders(resp.sells, "sells");
+      } catch (e) {
+        console.error("Erro ao carregar histórico:", e);
+      }
+    }
+
+    function renderStats(stats) {
+      var statsCards = [
+        { val: stats.totalOrders, lbl: "Total de pedidos" },
+        { val: stats.totalBuys, lbl: "Compras" },
+        { val: stats.totalSells, lbl: "Vendas" },
+        { val: brl(stats.totalSpent), lbl: "Gasto total" },
+        { val: brl(stats.totalEarned), lbl: "Ganho total" },
+        { val: brl(stats.balance), lbl: "Saldo", color: stats.balance >= 0 ? "var(--success)" : "var(--ruby)" },
+      ];
+      document.getElementById("stats-grid").innerHTML = statsCards.map(function (s) {
+        return '<div class="stat-card"><div class="val" style="' + (s.color ? "color:" + s.color : "") + '">' + s.val + '</div><div class="lbl">' + s.lbl + '</div></div>';
+      }).join("");
+    }
+
+    function renderOrders(orders, tabId) {
+      var container = document.getElementById("tab-" + tabId);
+      if (!orders || !orders.length) {
+        container.innerHTML = '<div class="empty">Nenhuma transação encontrada.</div>';
+        return;
+      }
+      container.innerHTML = orders.map(function (o) { return orderCardHTML(o); }).join("");
+    }
+
+    function orderCardHTML(o) {
+      var isSell = o.type === "sell";
+      var typeLabel = isSell ? "VENDA" : "COMPRA";
+      var items = o.items || [];
+
+      var statusClass = o.status;
+      if (o.status === "completed" || o.status === "paid") statusClass = "completed";
+      if (o.status === "paid_out") statusClass = "completed";
+
+      var itemsHTML = items.map(function (it) {
+        var img = it.image ? '<img src="' + esc(it.image) + '" />' : '<div style="width:100%;height:100px;background:var(--bg-elev-2);border-radius:.4rem;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.7rem">Sem imagem</div>';
+        return '<div class="item">' + img +
+          '<div class="iname">' + esc(it.name) + '</div>' +
+          '<div class="iprice">' + brl(it.price || 0) + '</div></div>';
+      }).join("");
+
+      return '<div class="order-card">' +
+        '<div class="order-head">' +
+          '<span class="order-type ' + (isSell ? 'sell' : 'buy') + '">' + typeLabel + '</span>' +
+          '<span class="order-id">' + esc(o.id) + '</span>' +
+          '<span class="order-value">' + brl(o.total || 0) + '</span>' +
+          '<span class="order-status ' + statusClass + '">' + (o.status || "—") + '</span>' +
+          '<span class="order-date">' + fmtDate(o.createdAt) + '</span>' +
+        '</div>' +
+        '<div class="items-grid">' + (itemsHTML || '<span style="color:var(--text-muted)">Sem itens</span>') + '</div>' +
+      '</div>';
+    }
+
+    // tabs
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.addEventListener("click", function () {
+        document.querySelectorAll(".tab").forEach(function (x) { x.classList.remove("on"); });
+        t.classList.add("on");
+        ["all", "buys", "sells"].forEach(function (name) {
+          document.getElementById("tab-" + name).style.display = name === t.dataset.tab ? "" : "none";
+        });
+      });
+    });
+
+    boot();
+  });
+  </script>
+</body>
+</html>
