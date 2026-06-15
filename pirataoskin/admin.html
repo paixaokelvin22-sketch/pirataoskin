@@ -25,6 +25,30 @@
     .pill.pending{background:rgba(255,194,51,.18);color:var(--gold)}
     .pill.canceled{background:rgba(226,58,78,.18);color:var(--ruby)}
     .gate{text-align:center;padding:5rem 1rem;color:var(--text-muted)}
+    /* order detail cards */
+    .ocard{background:var(--bg-elev);border:1px solid var(--border);border-radius:.8rem;margin-bottom:.8rem;overflow:hidden}
+    .ocard-head{display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;cursor:pointer;flex-wrap:wrap}
+    .ocard-head:hover{background:var(--bg-elev-2)}
+    .ocard-type{font-size:.7rem;font-weight:700;padding:.15rem .5rem;border-radius:1rem;text-transform:uppercase}
+    .ocard-type.buy{background:rgba(61,214,140,.18);color:var(--success)}
+    .ocard-type.sell{background:rgba(100,149,237,.25);color:#6495ED}
+    .ocard-id{font-family:monospace;font-size:.85rem;color:var(--text)}
+    .ocard-user{color:var(--text-muted);font-size:.85rem}
+    .ocard-total{font-family:'Cinzel',serif;color:var(--gold);font-size:1rem;margin-left:auto}
+    .ocard-body{display:none;padding:0 1rem 1rem;border-top:1px solid var(--border)}
+    .ocard.open .ocard-body{display:block}
+    .ocard-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:.8rem}
+    @media(max-width:700px){.ocard-grid{grid-template-columns:1fr}}
+    .ocard-section{font-size:.85rem}
+    .ocard-section .lbl{color:var(--text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem}
+    .ocard-section .val{color:var(--text);word-break:break-all}
+    .ocard-section a{color:var(--gold)}
+    .ocard-items{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.6rem}
+    .ocard-item{display:flex;align-items:center;gap:.5rem;background:var(--bg-elev-2);border:1px solid var(--border);border-radius:.5rem;padding:.4rem .6rem}
+    .ocard-item img{width:40px;height:40px;object-fit:contain}
+    .ocard-item .iname{font-size:.8rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ocard-item .iprice{font-size:.75rem;color:var(--gold);font-weight:600}
+    .ocard-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--border)}
   </style>
 </head>
 <body>
@@ -44,27 +68,35 @@
       <div class="kpis" id="kpis"></div>
 
       <div class="admin-tabs">
-        <div class="tab on" data-tab="finance">💰 Financeiro</div>
-        <div class="tab" data-tab="orders">🧾 Pedidos</div>
+        <div class="tab on" data-tab="orders">🧾 Pedidos</div>
         <div class="tab" data-tab="users">👥 Usuários</div>
         <div class="tab" data-tab="trades">🤖 Bot & Trades</div>
         <div class="tab" data-tab="settings">⚙ Pagamento</div>
       </div>
 
-      <section id="tab-finance">
-        <div class="tablewrap"><table>
-          <thead><tr><th>Pedido</th><th>Comprador</th><th>Itens</th><th>Total</th><th>Status</th><th>Data</th></tr></thead>
-          <tbody id="finance-rows"></tbody>
-        </table></div>
+      <!-- PEDIDOS (visão detalhada com cards) -->
+      <section id="tab-orders">
+        <div style="display:flex;gap:.6rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+          <select class="select" id="filter-type" style="font-size:.85rem">
+            <option value="">Todos</option>
+            <option value="buy">Compras</option>
+            <option value="sell">Vendas</option>
+          </select>
+          <select class="select" id="filter-status" style="font-size:.85rem">
+            <option value="">Qualquer status</option>
+            <option value="pending">Pendente</option>
+            <option value="paid">Pago</option>
+            <option value="trade_sent">Trade enviada</option>
+            <option value="completed">Concluído</option>
+            <option value="payout_pending">Payout pendente</option>
+            <option value="canceled">Cancelado</option>
+          </select>
+          <span id="orders-count" style="color:var(--text-muted);font-size:.85rem"></span>
+        </div>
+        <div id="orders-list"></div>
       </section>
 
-      <section id="tab-orders" style="display:none">
-        <div class="tablewrap"><table>
-          <thead><tr><th>Pedido</th><th>Comprador</th><th>Total</th><th>Método</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody id="orders-rows"></tbody>
-        </table></div>
-      </section>
-
+      <!-- USUARIOS -->
       <section id="tab-users" style="display:none">
         <div class="tablewrap"><table>
           <thead><tr><th>Avatar</th><th>Nome</th><th>SteamID</th><th>Logins</th><th>Último acesso</th><th>Admin</th></tr></thead>
@@ -72,6 +104,7 @@
         </table></div>
       </section>
 
+      <!-- BOT & TRADES -->
       <section id="tab-trades" style="display:none">
         <div class="panel" style="margin-bottom:1.2rem">
           <h3 class="display">Status do bot Steam</h3>
@@ -88,26 +121,26 @@
           <details>
             <summary style="cursor:pointer;color:var(--gold);font-weight:600">Configurar credenciais do bot</summary>
             <div style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:.6rem;padding:.8rem 1rem;margin:.8rem 0;font-size:.85rem;color:var(--text-muted)">
-              ⚠️ Sem credenciais o bot opera em <b>SIMULAÇÃO</b>. Para modo real informe a <b>conta</b>,
-              <b>senha</b> e a <b>API key</b> (steamcommunity.com/dev/apikey).<br>
+              ⚠️ Sem credenciais o bot opera em <b>SIMULAÇÃO</b> (não envia trades reais).<br>
+              Para modo real, preencha apenas <b>3 campos obrigatórios</b>:<br>
+              1. <b>Conta</b> (login da Steam)<br>
+              2. <b>Senha</b><br>
+              3. <b>API key</b> (<a href="https://steamcommunity.com/dev/apikey" target="_blank" style="color:var(--gold)">pegue aqui</a>)<br><br>
               O <b>shared_secret</b> e <b>identity_secret</b> são <b>opcionais</b> — sem eles, o bot pede
               o código do Steam Guard manualmente (campo acima) e salva um refresh token para logins futuros.
             </div>
-            <div class="field"><label>Conta (login)</label><input id="bot-account" autocomplete="off" /></div>
-            <div class="field"><label>Senha</label><input id="bot-password" type="password" autocomplete="off" /></div>
-            <div class="field"><label>shared_secret</label><input id="bot-shared" type="password" autocomplete="off" /></div>
-            <div class="field"><label>identity_secret</label><input id="bot-identity" type="password" autocomplete="off" /></div>
-            <div class="field"><label>API key</label><input id="bot-apikey" type="password" autocomplete="off" /></div>
+            <div class="field"><label>Conta (login) *</label><input id="bot-account" autocomplete="off" /></div>
+            <div class="field"><label>Senha *</label><input id="bot-password" type="password" autocomplete="off" /></div>
+            <div class="field"><label>API key *</label><input id="bot-apikey" type="password" autocomplete="off" /></div>
+            <div class="field"><label>shared_secret (opcional)</label><input id="bot-shared" type="password" autocomplete="off" /></div>
+            <div class="field"><label>identity_secret (opcional)</label><input id="bot-identity" type="password" autocomplete="off" /></div>
             <button class="btn btn-gold" id="bot-save">Salvar e reiniciar bot</button>
             <p id="bot-msg" style="font-size:.85rem;margin-top:.7rem"></p>
           </details>
         </div>
-        <div class="tablewrap"><table>
-          <thead><tr><th>Pedido</th><th>Tipo</th><th>Itens</th><th>Valor</th><th>Oferta</th><th>Estado</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody id="trades-rows"></tbody>
-        </table></div>
       </section>
 
+      <!-- PAGAMENTO -->
       <section id="tab-settings" style="display:none">
         <div class="panel" style="max-width:680px">
           <h3 class="display">Credencial de pagamento (Mercado Pago)</h3>
@@ -120,9 +153,7 @@
             (começa com <code>APP_USR-</code> em produção ou <code>TEST-</code> em teste).
             Pegue em: Mercado Pago → <i>Suas integrações → Credenciais</i>.
           </div>
-
           <div id="mp-status" style="margin-bottom:1rem"></div>
-
           <div class="field">
             <label>Access Token</label>
             <input type="password" id="mp-token" placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-..." autocomplete="off" />
@@ -147,10 +178,15 @@
   <script>
   document.addEventListener("DOMContentLoaded", function () {
     var brl = PIRATA.brl;
+    var allOrders = [];
 
     function fmtDate(s) {
       if (!s) return "—";
       try { return new Date(s).toLocaleString("pt-BR"); } catch { return s; }
+    }
+
+    function esc(s) {
+      var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML;
     }
 
     async function boot() {
@@ -171,13 +207,14 @@
     }
 
     async function loadAll() {
-      var [summary, orders, users] = await Promise.all([
-        fetch("/api/admin/summary", { credentials: "same-origin" }).then((r) => r.json()),
-        fetch("/api/admin/orders", { credentials: "same-origin" }).then((r) => r.json()),
-        fetch("/api/admin/users", { credentials: "same-origin" }).then((r) => r.json()),
+      var [summary, ordersResp, users] = await Promise.all([
+        fetch("/api/admin/summary", { credentials: "same-origin" }).then(function (r) { return r.json(); }),
+        fetch("/api/admin/orders", { credentials: "same-origin" }).then(function (r) { return r.json(); }),
+        fetch("/api/admin/users", { credentials: "same-origin" }).then(function (r) { return r.json(); }),
       ]);
       renderKpis(summary);
-      renderOrders(orders.orders || []);
+      allOrders = ordersResp.orders || [];
+      renderOrderCards();
       renderUsers(users.users || []);
     }
 
@@ -191,32 +228,126 @@
     function kpi(v, l) { return '<div class="kpi"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
 
     function statusPill(st) {
-      var label = st === "paid" ? "Pago" : st === "canceled" ? "Cancelado" : "Pendente";
-      return '<span class="pill ' + st + '">' + label + '</span>';
+      var labels = {
+        pending: "Pendente", paid: "Pago", canceled: "Cancelado", completed: "Concluído",
+        trade_sent: "Trade enviada", trade_failed: "Trade falhou", delivery_failed: "Entrega falhou",
+        awaiting_items: "Aguardando itens", payout_pending: "Payout pendente", paid_out: "Pago ao vendedor",
+        aguardando_trade_url: "Sem Trade URL"
+      };
+      var ok = ["completed", "paid_out", "paid"].indexOf(st) >= 0;
+      var bad = ["canceled", "delivery_failed", "trade_failed"].indexOf(st) >= 0;
+      var cls = ok ? "paid" : bad ? "canceled" : "pending";
+      return '<span class="pill ' + cls + '">' + (labels[st] || st) + '</span>';
     }
 
-    function renderOrders(orders) {
-      document.getElementById("finance-rows").innerHTML = orders.length ? orders.map(function (o) {
-        return "<tr><td>" + o.id + "</td><td>" + (o.buyer || "—") + "</td><td>" + o.items.length +
-          "</td><td class='tnum'>" + brl(o.total) + "</td><td>" + statusPill(o.status) + "</td><td>" + fmtDate(o.createdAt) + "</td></tr>";
-      }).join("") : '<tr><td colspan="6" style="color:var(--text-muted)">Nenhum pedido ainda.</td></tr>';
-
-      document.getElementById("orders-rows").innerHTML = orders.length ? orders.map(function (o) {
-        var actions = o.status !== "paid"
-          ? '<button class="btn btn-soft btn-sm" data-paid="' + o.id + '">Marcar pago</button> ' : "";
-        actions += o.status !== "canceled"
-          ? '<button class="btn btn-soft btn-sm" data-cancel="' + o.id + '">Cancelar</button>' : "";
-        return "<tr><td>" + o.id + "</td><td>" + (o.buyer || "—") + "</td><td class='tnum'>" + brl(o.total) +
-          "</td><td>" + (o.method || "pix") + "</td><td>" + statusPill(o.status) + "</td><td>" + actions + "</td></tr>";
-      }).join("") : '<tr><td colspan="6" style="color:var(--text-muted)">Nenhum pedido ainda.</td></tr>';
-
-      document.querySelectorAll("[data-paid]").forEach(function (b) {
-        b.addEventListener("click", function () { setStatus(b.dataset.paid, "paid"); });
+    // ---- ORDER CARDS (detalhadas) ----
+    function renderOrderCards() {
+      var ft = document.getElementById("filter-type").value;
+      var fs = document.getElementById("filter-status").value;
+      var filtered = allOrders.filter(function (o) {
+        if (ft && (o.type || "buy") !== ft) return false;
+        if (fs && o.status !== fs) return false;
+        return true;
       });
-      document.querySelectorAll("[data-cancel]").forEach(function (b) {
-        b.addEventListener("click", function () { setStatus(b.dataset.cancel, "canceled"); });
+      document.getElementById("orders-count").textContent = filtered.length + " pedido(s)";
+      var container = document.getElementById("orders-list");
+      if (!filtered.length) {
+        container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Nenhum pedido encontrado.</div>';
+        return;
+      }
+      container.innerHTML = filtered.map(function (o) { return orderCardHTML(o); }).join("");
+      // toggle expand
+      container.querySelectorAll(".ocard-head").forEach(function (h) {
+        h.addEventListener("click", function () { h.parentElement.classList.toggle("open"); });
+      });
+      // actions
+      container.querySelectorAll("[data-action]").forEach(function (b) {
+        b.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var action = b.dataset.action;
+          var id = b.dataset.id;
+          if (action === "paid") setStatus(id, "paid");
+          else if (action === "cancel") setStatus(id, "canceled");
+          else if (action === "payout") botAction("/api/admin/orders/" + id + "/payout");
+          else if (action === "redeliver") botAction("/api/admin/orders/" + id + "/redeliver");
+          else if (action === "simulate") botAction("/api/admin/orders/" + id + "/simulate", { state: "accepted" });
+        });
       });
     }
+
+    function orderCardHTML(o) {
+      var type = o.type || "buy";
+      var isSell = type === "sell";
+      var typeLabel = isSell ? "VENDA" : "COMPRA";
+      var typeCls = isSell ? "sell" : "buy";
+      var items = o.items || [];
+
+      // items grid
+      var itemsHTML = items.map(function (it) {
+        var img = it.image ? '<img src="' + esc(it.image) + '" />' : '<div style="width:40px;height:40px;background:var(--bg-elev-2);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--text-muted)">?</div>';
+        return '<div class="ocard-item">' + img +
+          '<div><div class="iname">' + esc(it.name) + '</div>' +
+          '<div class="iprice">' + brl(it.price || 0) + '</div></div></div>';
+      }).join("");
+
+      // details grid
+      var details = '';
+      details += sec("Usuário", esc(o.buyer || "—") + ' <span style="color:var(--text-muted);font-size:.78rem">(' + esc(o.steamid || "") + ')</span>');
+      details += sec("Tipo", '<span class="ocard-type ' + typeCls + '">' + typeLabel + '</span>' + (isSell ? " — Usuário vende para a loja" : " — Usuário compra da loja"));
+      details += sec("Valor total", '<span style="font-size:1.1rem;font-weight:700;color:var(--gold)">' + brl(o.total || 0) + '</span>' + (o.market ? ' <span style="color:var(--text-muted);font-size:.8rem">(mercado: ' + brl(o.market) + ')</span>' : ''));
+      details += sec("Status", statusPill(o.status) + (o.tradeState ? ' · trade: ' + esc(o.tradeState) : '') + (o.tradeError ? ' · <span style="color:var(--ruby)">' + esc(o.tradeError) + '</span>' : ''));
+
+      if (o.tradeUrl) {
+        details += sec("Trade URL", '<a href="' + esc(o.tradeUrl) + '" target="_blank" style="word-break:break-all">' + esc(o.tradeUrl) + '</a>');
+      }
+      if (isSell && o.pixKey) {
+        details += sec("Chave PIX do vendedor", '<code style="color:var(--gold);font-size:.9rem">' + esc(o.pixKey) + '</code>');
+      }
+      if (o.offerId) {
+        details += sec("Oferta de trade", '<code>' + esc(o.offerId) + '</code>');
+      }
+      if (o.mpPaymentId) {
+        details += sec("Pagamento MP", '<code>' + esc(String(o.mpPaymentId)) + '</code>');
+      }
+      details += sec("Método", esc(o.method || "pix"));
+      details += sec("Criado em", fmtDate(o.createdAt));
+      if (o.paidAt) details += sec("Pago em", fmtDate(o.paidAt));
+      if (o.deliveredAt) details += sec("Entregue em", fmtDate(o.deliveredAt));
+      if (o.itemsReceivedAt) details += sec("Itens recebidos em", fmtDate(o.itemsReceivedAt));
+      if (o.paidOutAt) details += sec("PIX enviado em", fmtDate(o.paidOutAt));
+
+      // actions
+      var actions = [];
+      if (o.status === "pending") actions.push('<button class="btn btn-gold btn-sm" data-action="paid" data-id="' + o.id + '">Marcar pago</button>');
+      if (o.status !== "canceled" && o.status !== "completed" && o.status !== "paid_out") actions.push('<button class="btn btn-soft btn-sm" data-action="cancel" data-id="' + o.id + '">Cancelar</button>');
+      if (isSell && (o.status === "payout_pending" || o.status === "items_received")) actions.push('<button class="btn btn-gold btn-sm" data-action="payout" data-id="' + o.id + '">Liberar PIX</button>');
+      if (!isSell && (o.status === "delivery_failed" || o.status === "aguardando_trade_url")) actions.push('<button class="btn btn-soft btn-sm" data-action="redeliver" data-id="' + o.id + '">Reenviar trade</button>');
+      if (o.offerId && !["completed", "paid_out", "canceled"].includes(o.status)) actions.push('<button class="btn btn-soft btn-sm" data-action="simulate" data-id="' + o.id + '">Simular aceite</button>');
+
+      return '<div class="ocard">' +
+        '<div class="ocard-head">' +
+          '<span class="ocard-type ' + typeCls + '">' + typeLabel + '</span>' +
+          '<span class="ocard-id">' + esc(o.id) + '</span>' +
+          '<span class="ocard-user">' + esc(o.buyer || "—") + '</span>' +
+          statusPill(o.status) +
+          '<span class="ocard-total">' + brl(o.total || 0) + '</span>' +
+          '<span style="color:var(--text-muted);font-size:.8rem">' + fmtDate(o.createdAt) + '</span>' +
+        '</div>' +
+        '<div class="ocard-body">' +
+          '<div style="margin-top:.8rem"><div class="lbl" style="color:var(--text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">Skins (' + items.length + ')</div>' +
+          '<div class="ocard-items">' + (itemsHTML || '<span style="color:var(--text-muted)">—</span>') + '</div></div>' +
+          '<div class="ocard-grid">' + details + '</div>' +
+          (actions.length ? '<div class="ocard-actions">' + actions.join(" ") + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    function sec(label, val) {
+      return '<div class="ocard-section"><div class="lbl">' + label + '</div><div class="val">' + val + '</div></div>';
+    }
+
+    document.getElementById("filter-type").addEventListener("change", renderOrderCards);
+    document.getElementById("filter-status").addEventListener("change", renderOrderCards);
 
     async function setStatus(id, status) {
       await fetch("/api/admin/orders/" + id + "/status", {
@@ -252,7 +383,7 @@
       t.addEventListener("click", function () {
         document.querySelectorAll(".admin-tabs .tab").forEach(function (x) { x.classList.remove("on"); });
         t.classList.add("on");
-        ["finance", "orders", "users", "trades", "settings"].forEach(function (name) {
+        ["orders", "users", "trades", "settings"].forEach(function (name) {
           document.getElementById("tab-" + name).style.display = name === t.dataset.tab ? "" : "none";
         });
         if (t.dataset.tab === "settings") loadSettings();
@@ -263,7 +394,7 @@
     // ---- configuração de pagamento ----
     async function loadSettings() {
       try {
-        var s = await fetch("/api/admin/settings", { credentials: "same-origin" }).then((r) => r.json());
+        var s = await fetch("/api/admin/settings", { credentials: "same-origin" }).then(function (r) { return r.json(); });
         renderMpStatus(s);
       } catch (e) { /* ignore */ }
     }
@@ -312,12 +443,8 @@
     // ---- bot & trades ----
     async function loadTrades() {
       try {
-        var [botInfo, ordersResp] = await Promise.all([
-          fetch("/api/admin/bot", { credentials: "same-origin" }).then((r) => r.json()),
-          fetch("/api/admin/orders", { credentials: "same-origin" }).then((r) => r.json()),
-        ]);
+        var botInfo = await fetch("/api/admin/bot", { credentials: "same-origin" }).then(function (r) { return r.json(); });
         renderBotStatus(botInfo);
-        renderTrades(ordersResp.orders || [], botInfo.status);
       } catch (e) { /* ignore */ }
     }
 
@@ -329,61 +456,27 @@
         : s.mode === "connecting"
         ? '<span class="pill pending">CONECTANDO…</span>'
         : '<span class="pill pending">SIMULAÇÃO</span>';
-      var creds = ["accountName", "hasPassword", "hasSharedSecret", "hasIdentitySecret", "hasApiKey"]
-        .map(function (k) { return (k === "accountName" ? !!c.accountName : c[k]) ? "✅" : "❌"; });
+      var creds = [];
+      if (c.accountName) creds.push("conta ✅"); else creds.push("conta ❌");
+      if (c.hasPassword) creds.push("senha ✅"); else creds.push("senha ❌");
+      if (c.hasApiKey) creds.push("apiKey ✅"); else creds.push("apiKey ❌");
+      if (c.hasSharedSecret) creds.push("shared ✅");
+      if (c.hasIdentitySecret) creds.push("identity ✅");
       var extras = [];
       if (s.autoLogin) extras.push("login automático ✅");
       if (s.autoConfirm) extras.push("confirmação automática ✅");
       document.getElementById("bot-status").innerHTML =
         modeTag + ' <span style="color:var(--text-muted)">online: ' + (s.online ? "sim" : "não") +
         " · SteamID: " + (s.steamid || "—") + (s.error ? " · erro: " + s.error : "") + "</span>" +
-        '<div style="color:var(--text-muted);font-size:.82rem;margin-top:.5rem">Credenciais — conta ' + creds[0] +
-        " · senha " + creds[1] + " · shared " + creds[2] + " · identity " + creds[3] + " · apiKey " + creds[4] +
+        '<div style="color:var(--text-muted);font-size:.82rem;margin-top:.5rem">' + creds.join(" · ") +
         (extras.length ? " · " + extras.join(" · ") : "") + "</div>";
       if (c.accountName) document.getElementById("bot-account").placeholder = c.accountName + " (configurado)";
-      // mostrar/esconder campo de código do guard
       var guardBox = document.getElementById("guard-code-box");
       guardBox.style.display = s.needsGuardCode ? "" : "none";
       if (s.guardWrong) {
         document.getElementById("guard-msg").style.color = "var(--ruby)";
         document.getElementById("guard-msg").textContent = "Código incorreto. Tente novamente.";
       }
-    }
-
-    function renderTrades(orders, botStatus) {
-      var sim = botStatus && botStatus.mode === "simulation";
-      document.getElementById("trades-rows").innerHTML = orders.length ? orders.map(function (o) {
-        var actions = "";
-        if (o.type === "sell" && (o.status === "payout_pending" || o.status === "items_received")) {
-          actions += '<button class="btn btn-gold btn-sm" data-payout="' + o.id + '">Liberar PIX</button> ';
-        }
-        if (o.type === "buy" && (o.status === "delivery_failed" || o.status === "aguardando_trade_url")) {
-          actions += '<button class="btn btn-soft btn-sm" data-redeliver="' + o.id + '">Reenviar</button> ';
-        }
-        if (sim && o.offerId && !["completed", "paid_out", "canceled"].includes(o.status)) {
-          actions += '<button class="btn btn-soft btn-sm" data-sim="' + o.id + '">Simular aceite</button>';
-        }
-        return "<tr><td>" + o.id + "</td><td>" + (o.type || "—") + "</td><td>" + (o.items ? o.items.length : 0) +
-          "</td><td class='tnum'>" + brl(o.total || 0) + "</td><td>" + (o.offerId || "—") +
-          "</td><td>" + (o.tradeState || "—") + "</td><td>" + statusPill2(o.status) + "</td><td>" + (actions || "—") + "</td></tr>";
-      }).join("") : '<tr><td colspan="8" style="color:var(--text-muted)">Nenhuma trade ainda.</td></tr>';
-
-      document.querySelectorAll("[data-payout]").forEach(function (b) {
-        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.payout + "/payout"); });
-      });
-      document.querySelectorAll("[data-redeliver]").forEach(function (b) {
-        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.redeliver + "/redeliver"); });
-      });
-      document.querySelectorAll("[data-sim]").forEach(function (b) {
-        b.addEventListener("click", function () { botAction("/api/admin/orders/" + b.dataset.sim + "/simulate", { state: "accepted" }); });
-      });
-    }
-
-    function statusPill2(st) {
-      var ok = ["completed", "paid_out", "paid"].indexOf(st) >= 0;
-      var bad = ["canceled", "delivery_failed", "trade_failed"].indexOf(st) >= 0;
-      var cls = ok ? "paid" : bad ? "canceled" : "pending";
-      return '<span class="pill ' + cls + '">' + st + "</span>";
     }
 
     async function botAction(url, body) {
@@ -436,7 +529,7 @@
       }
     });
 
-    document.getElementById("refresh").addEventListener("click", loadAll);
+    document.getElementById("refresh").addEventListener("click", function () { loadAll(); loadTrades(); });
     boot();
   });
   </script>

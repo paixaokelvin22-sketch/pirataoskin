@@ -162,7 +162,7 @@
 
       var payloadItems = [];
       selected.forEach(function (v) {
-        payloadItems.push({ assetid: v.item.assetid, name: v.item.name, market_hash_name: v.item.market_hash_name, price: v.price });
+        payloadItems.push({ assetid: v.item.assetid, name: v.item.name, market_hash_name: v.item.market_hash_name, price: v.price, image: v.item.image || null });
       });
 
       var btn = document.getElementById("sell-btn");
