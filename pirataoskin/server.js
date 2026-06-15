@@ -496,6 +496,29 @@ app.get("/api/admin/summary", requireAdmin, (req, res) => {
 app.get("/api/admin/users", requireAdmin, (req, res) => {
   res.json({ users: Object.values(db.users).sort((a, b) => (b.lastLogin || "").localeCompare(a.lastLogin || "")) });
 });
+app.get("/api/admin/user/:steamid", requireAdmin, (req, res) => {
+  const user = db.users[req.params.steamid];
+  if (!user) return res.status(404).json({ error: "usuario_nao_encontrado" });
+  const orders = db.orders.filter((o) => o.steamid === req.params.steamid).slice().reverse();
+  const buys = orders.filter((o) => (o.type || "buy") === "buy");
+  const sells = orders.filter((o) => o.type === "sell");
+  const totalSpent = buys.reduce((s, o) => s + (o.status === "paid" || o.status === "completed" ? o.total : 0), 0);
+  const totalEarned = sells.reduce((s, o) => s + (o.status === "paid_out" ? o.total : 0), 0);
+  res.json({
+    user,
+    orders,
+    buys,
+    sells,
+    stats: {
+      totalOrders: orders.length,
+      totalBuys: buys.length,
+      totalSells: sells.length,
+      totalSpent,
+      totalEarned,
+      balance: totalEarned - totalSpent,
+    },
+  });
+});
 app.get("/api/admin/orders", requireAdmin, (req, res) => {
   res.json({ orders: db.orders.slice().reverse() });
 });

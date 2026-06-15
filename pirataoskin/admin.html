@@ -328,7 +328,7 @@
         '<div class="ocard-head">' +
           '<span class="ocard-type ' + typeCls + '">' + typeLabel + '</span>' +
           '<span class="ocard-id">' + esc(o.id) + '</span>' +
-          '<span class="ocard-user">' + esc(o.buyer || "—") + '</span>' +
+          '<a href="user-profile.html?steamid=' + esc(o.steamid || "") + '" class="ocard-user" style="color:var(--gold);text-decoration:none;cursor:pointer">' + esc(o.buyer || "—") + '</a>' +
           statusPill(o.status) +
           '<span class="ocard-total">' + brl(o.total || 0) + '</span>' +
           '<span style="color:var(--text-muted);font-size:.8rem">' + fmtDate(o.createdAt) + '</span>' +
