@@ -500,7 +500,7 @@ app.get("/api/admin/orders", requireAdmin, (req, res) => {
   res.json({ orders: db.orders.slice().reverse() });
 });
 // marcar pedido manualmente (util p/ PIX estatico ou ajustes)
-app.post("/api/admin/orders/:id/status", requireAdmin, (req, res) => {
+app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
   const order = db.orders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "nao_encontrado" });
   const status = (req.body && req.body.status) || "";
@@ -508,6 +508,10 @@ app.post("/api/admin/orders/:id/status", requireAdmin, (req, res) => {
   order.status = status;
   order.paidAt = status === "paid" ? new Date().toISOString() : null;
   saveDB();
+  // se marcado como "paid" e for compra, envia o bot
+  if (status === "paid" && order.type === "buy") {
+    await deliverPaidOrder(order);
+  }
   res.json({ ok: true, order });
 });
 // configuracoes de pagamento (Access Token do Mercado Pago) — geridas pelo painel
