@@ -36,9 +36,9 @@
           <div class="grid" id="give-grid" style="grid-template-columns:repeat(2,1fr)"></div>
         </div>
         <div class="panel">
-          <h3 class="display">2. Skin que você quer (catálogo da loja)</h3>
+          <h3 class="display">2. Skin que você quer (à venda na loja)</h3>
           <div class="field">
-            <label>Escolha o tesouro</label>
+            <label>Escolha o tesouro (inventário real da loja)</label>
             <select id="want" class="select" style="width:100%"></select>
           </div>
           <div id="want-preview"></div>
@@ -123,26 +123,59 @@
       update();
     }
 
-    // skins desejadas: catálogo da loja (mais caras primeiro)
-    var targets = PIRATA.D.skins.slice().sort(function (a, b) { return b.preco - a.preco; }).slice(0, 8);
+    // skins desejadas: inventário REAL da loja (mesmas que estão à venda)
+    var storeItems = [];           // itens reais da loja, com preço
+    var wantById = {};             // id -> item da loja
     var sel = document.getElementById("want");
-    sel.innerHTML = targets.map(function (s) {
-      return '<option value="' + s.id + '">' + s.arma + ' | ' + s.skin + ' — ' + PIRATA.brl(s.preco) + '</option>';
-    }).join("");
+
+    async function loadStoreTargets() {
+      sel.innerHTML = '<option>carregando skins da loja…</option>';
+      try {
+        var data = await fetch("/api/store?limit=240", { credentials: "same-origin" }).then(function (r) { return r.json(); });
+        if (data.error === "private") { sel.innerHTML = '<option>inventário da loja está privado</option>'; return; }
+        // só itens com preço definido, mais caros primeiro
+        storeItems = (data.items || []).filter(function (it) { return it.price != null; })
+          .sort(function (a, b) { return b.price - a.price; });
+        if (!storeItems.length) { sel.innerHTML = '<option>nenhuma skin à venda no momento</option>'; return; }
+        wantById = {};
+        sel.innerHTML = storeItems.map(function (it) {
+          wantById[it.id] = it;
+          return '<option value="' + it.id + '">' + it.name + ' — ' + PIRATA.brl(it.price) + '</option>';
+        }).join("");
+        renderPreview(); update();
+      } catch (e) {
+        sel.innerHTML = '<option>falha ao carregar skins da loja</option>';
+      }
+    }
     sel.addEventListener("change", function () { renderPreview(); update(); });
 
+    function currentTarget() { return wantById[sel.value] || null; }
+
     function renderPreview() {
-      var s = PIRATA.skinById(sel.value);
+      var s = currentTarget();
+      if (!s) { document.getElementById("want-preview").innerHTML = ""; return; }
+      var grad = s.rarityColor
+        ? 'radial-gradient(circle at 50% 35%, ' + s.rarityColor + '55, transparent 60%), linear-gradient(135deg,#0e1a28,#1b2c40)'
+        : 'linear-gradient(135deg,#0e1a28,#1b2c40)';
       document.getElementById("want-preview").innerHTML =
-        '<div class="grid" style="grid-template-columns:1fr;max-width:220px;margin-top:1rem">' +
-        PIRATA.cardHTML(s).replace(/<button class="btn btn-gold btn-sm".*?<\/button>/, '') + '</div>';
+        '<div style="max-width:220px;margin-top:1rem;background:var(--bg-elev);border:1px solid var(--border);border-radius:.7rem;overflow:hidden">' +
+          '<div style="background:' + grad + ';padding:1rem;text-align:center">' +
+            (s.image ? '<img src="' + s.image + '" style="width:100%;height:120px;object-fit:contain" />' : '') +
+          '</div>' +
+          '<div style="padding:.7rem">' +
+            '<div style="font-size:.85rem;color:var(--text)">' + s.name + '</div>' +
+            '<div style="font-family:\'Cinzel\',serif;color:var(--gold);margin-top:.3rem">' + PIRATA.brl(s.price) + '</div>' +
+            (s.wear ? '<div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">' + s.wear + '</div>' : '') +
+          '</div>' +
+        '</div>';
     }
 
     function update() {
       var credit = 0;
       give.forEach(function (v) { credit += v.price || 0; });
       credit = credit * 0.85;
-      var target = PIRATA.skinById(sel.value).preco;
+      var t = currentTarget();
+      var target = t ? t.price : 0;
       var diff = target - credit;
       document.getElementById("up-credit").textContent = PIRATA.brl(credit);
       document.getElementById("up-target").textContent = PIRATA.brl(target);
@@ -153,10 +186,11 @@
 
     document.getElementById("up-btn").addEventListener("click", function () {
       if (!give.size) { PIRATA.toast("Escolha ao menos uma skin para dar de entrada."); return; }
+      if (!currentTarget()) { PIRATA.toast("Escolha a skin que você quer."); return; }
       PIRATA.toast("⚔️ Upgrade registrado! (Integração de troca/pagamento é o próximo passo.)");
     });
 
-    renderPreview(); update();
+    loadStoreTargets();
   });
   </script>
 </body>
