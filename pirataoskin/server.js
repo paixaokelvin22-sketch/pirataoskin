@@ -381,12 +381,20 @@ app.get("/api/store", async (req, res) => {
     const inv = await fetchInventory(STORE_STEAMID);
     if (inv.error) return res.json(inv);
     const marketable = inv.items.filter((i) => i.marketable);
-    const slice = marketable.slice(0, limit).map((i) => {
+    // anexa preco (do cache) a TODOS os itens
+    const withPrice = marketable.map((i) => {
       const c = priceCache[i.market_hash_name];
       const price = c && c.price != null ? Math.round(c.price * STORE_MARKUP * 100) / 100 : null;
       return { ...i, id: i.assetid, price }; // id = assetid (chave usada nos cards/carrinho)
     });
-    res.json({ items: slice, count: marketable.length });
+    // ordena SEMPRE do mais caro p/ o mais barato (itens sem preco ficam por ultimo)
+    withPrice.sort((a, b) => {
+      if (a.price == null && b.price == null) return 0;
+      if (a.price == null) return 1;
+      if (b.price == null) return -1;
+      return b.price - a.price;
+    });
+    res.json({ items: withPrice.slice(0, limit), count: marketable.length });
   } catch (e) { res.status(502).json({ error: "falha_steam", detail: e.message, items: [] }); }
 });
 
