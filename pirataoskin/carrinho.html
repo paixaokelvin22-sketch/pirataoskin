@@ -141,7 +141,7 @@
       if (data.qr_code_base64) {
         qr.innerHTML = '<img src="data:image/png;base64,' + data.qr_code_base64 + '" alt="QR PIX" style="width:170px;height:170px" />';
       } else {
-        qr.innerHTML = '<div style="padding:1rem;color:#0B1622">QR indisponível — use o copia-e-cola.</div>';
+        qr.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">QR indisponível — use o copia-e-cola.</div>';
       }
       document.getElementById("pix-code").value = data.qr_code || "";
       document.getElementById("pix-copy").onclick = function () {

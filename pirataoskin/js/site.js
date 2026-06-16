@@ -90,20 +90,23 @@
   const searchSVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
 
   /* ---------- header / footer ---------- */
+  // [ícone, título, subtítulo, href]
   function navLinks() {
     return [
-      ["Comprar", "catalogo.html"],
-      ["Vender", "vender.html"],
-      ["Upgrade", "upgrade.html"],
-      ["Meu Histórico", "meu-historico.html"],
-      ["FAQ", "#faq"],
+      ["⚓", "Mercado", "Comprar skins", "catalogo.html"],
+      ["🪙", "Contrabando", "Vender skins", "vender.html"],
+      ["🔄", "Trocas", "Upgrades", "upgrade.html"],
+      ["📖", "Diário de Bordo", "Histórico", "meu-historico.html"],
+      ["🍺", "Taverna", "FAQ & Suporte", "#faq"],
     ];
   }
 
   function renderHeader() {
     const host = document.getElementById("site-header");
     if (!host) return;
-    const nav = navLinks().map(([t, h]) => `<a href="${h}">${t}</a>`).join("");
+    const nav = navLinks().map(([ico, t, sub, h]) =>
+      `<a href="${h}"><span>${ico} ${t}</span><span class="nsub">${sub}</span></a>`).join("");
+    const navMobile = navLinks().map(([ico, t, sub, h]) => `<a href="${h}">${ico} ${t} <span style="color:var(--text-muted)">— ${sub}</span></a>`).join("");
     host.innerHTML = `
     <header class="header">
       <div class="wrap header-inner">
@@ -113,7 +116,7 @@
           ${searchSVG}<input type="search" name="q" placeholder="Buscar skin, arma, coleção..." />
         </form>
         <div class="header-actions">
-          <div class="wallet" title="Sua carteira">⚓ <b>R$ 0,00</b></div>
+          <div class="wallet" title="Sua carteira">🪙 <b>R$ 0,00</b></div>
           <a class="icon-btn" href="carrinho.html" aria-label="Carrinho">
             ${cartSVG}<span class="cart-badge" data-cart-badge style="display:none">0</span>
           </a>
@@ -121,7 +124,7 @@
           <button class="icon-btn burger" aria-label="Menu" onclick="document.getElementById('mobile-menu').classList.toggle('open')">☰</button>
         </div>
       </div>
-      <div class="wrap"><div class="mobile-menu" id="mobile-menu">${nav}</div></div>
+      <div class="wrap"><div class="mobile-menu" id="mobile-menu">${navMobile}</div></div>
     </header>`;
     updateCartBadge();
   }
