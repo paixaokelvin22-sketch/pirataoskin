@@ -12,6 +12,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
 const session = require("express-session");
+const { MongoClient } = require("mongodb");
 const { SteamBot } = require("./bot/steam-bot");
 
 const app = express();
@@ -39,10 +40,13 @@ const STORE_STEAMID = CONFIG.storeSteamId || (CONFIG.adminSteamIds || [])[0] || 
 // Token padrão (config/env). Pode ser sobrescrito pelo painel admin (db.settings).
 const MP_TOKEN_DEFAULT = (CONFIG.mercadoPago && CONFIG.mercadoPago.accessToken) || process.env.MP_ACCESS_TOKEN || "";
 
-/* ---------- persistencia (JSON) ---------- */
+/* ---------- persistencia ----------
+   Prioridade: MongoDB (persistente) se MONGODB_URI existir; senao JSON local (efemero no Render).
+*/
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const PRICE_FILE = path.join(DATA_DIR, "prices.json");
+const MONGODB_URI = process.env.MONGODB_URI || (CONFIG.mongodbUri || "");
 
 function readJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; }
@@ -54,7 +58,54 @@ let db = readJSON(DB_FILE, { users: {}, orders: [], settings: {} });
 if (!db.users) db.users = {};
 if (!db.orders) db.orders = [];
 if (!db.settings) db.settings = {};
-function saveDB() { writeJSON(DB_FILE, db); }
+
+let mongoClient = null;
+let mongoCol = null; // colecao "appdata" com 1 documento { _id:"main", data: db }
+
+async function initMongo() {
+  if (!MONGODB_URI) {
+    console.log("[db] MONGODB_URI ausente — usando JSON local (DADOS EFEMEROS no Render).");
+    return false;
+  }
+  // Garante resolucao de registros SRV (mongodb+srv) priorizando DNS publico —
+  // algumas redes/ISPs nao resolvem SRV pelo DNS padrao.
+  try {
+    const dns = require("dns");
+    const cur = dns.getServers ? dns.getServers() : [];
+    dns.setServers([...new Set(["8.8.8.8", "1.1.1.1", ...cur])]);
+  } catch (e) { /* segue com DNS padrao */ }
+  try {
+    mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
+    await mongoClient.connect();
+    mongoCol = mongoClient.db().collection("appdata");
+    const doc = await mongoCol.findOne({ _id: "main" });
+    if (doc && doc.data) {
+      db = doc.data;
+      if (!db.users) db.users = {};
+      if (!db.orders) db.orders = [];
+      if (!db.settings) db.settings = {};
+      console.log("[db] MongoDB conectado. Pedidos:", db.orders.length, "| Usuarios:", Object.keys(db.users).length);
+    } else {
+      // primeira vez: grava o estado atual (migra o JSON local, se houver)
+      await mongoCol.updateOne({ _id: "main" }, { $set: { data: db } }, { upsert: true });
+      console.log("[db] MongoDB conectado (banco novo — estado inicial gravado).");
+    }
+    return true;
+  } catch (e) {
+    console.error("[db] FALHA ao conectar no MongoDB:", e.message, "— caindo p/ JSON local.");
+    mongoCol = null;
+    return false;
+  }
+}
+
+function saveDB() {
+  if (mongoCol) {
+    mongoCol.updateOne({ _id: "main" }, { $set: { data: db } }, { upsert: true })
+      .catch((e) => console.error("[db] saveDB mongo:", e.message));
+  } else {
+    writeJSON(DB_FILE, db);
+  }
+}
 
 // Token do Mercado Pago: painel admin (db.settings) tem prioridade sobre config/env.
 function getMpToken() {
@@ -673,11 +724,21 @@ app.use((req, res, next) => {
 app.use(express.static(ROOT, { extensions: ["html"] }));
 
 // healthcheck simples (mostra versao no ar — util p/ confirmar deploy)
-app.get("/version", (req, res) => res.json({ version: "2026-06-15-history", ok: true }));
+app.get("/version", (req, res) => res.json({
+  version: "2026-06-15-mongo",
+  db: mongoCol ? "mongodb" : "json-local",
+  ok: true,
+}));
 
-app.listen(PORT, () => {
-  console.log("PIRATAOSKIN (backend real) em http://localhost:" + PORT);
-  console.log("Admins:", [...ADMIN_IDS].join(", ") || "(nenhum)");
-  console.log("Mercado Pago:", getMpToken() ? "token configurado" : "SEM token (configure no painel admin)");
-  bot.start().catch((e) => console.error("[bot] start:", e.message));
-});
+(async () => {
+  await initMongo(); // carrega estado persistido (pedidos/usuarios/settings) ANTES de subir
+  // reconfigura o bot com as settings carregadas do banco
+  bot.configure(getBotConfig());
+  app.listen(PORT, () => {
+    console.log("PIRATAOSKIN (backend real) em http://localhost:" + PORT);
+    console.log("Persistencia:", mongoCol ? "MongoDB (persistente)" : "JSON local (efemero)");
+    console.log("Admins:", [...ADMIN_IDS].join(", ") || "(nenhum)");
+    console.log("Mercado Pago:", getMpToken() ? "token configurado" : "SEM token (configure no painel admin)");
+    bot.start().catch((e) => console.error("[bot] start:", e.message));
+  });
+})();
