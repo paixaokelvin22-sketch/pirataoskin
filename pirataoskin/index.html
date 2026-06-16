@@ -37,51 +37,7 @@
         </div>
       </div>
       <div class="hero-art">
-        <svg class="coin" width="340" height="300" viewBox="0 0 340 300" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <defs>
-            <radialGradient id="glow" cx="50%" cy="45%" r="60%">
-              <stop offset="0%" stop-color="#c98bff" stop-opacity=".9"/>
-              <stop offset="60%" stop-color="#a855f7" stop-opacity=".35"/>
-              <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
-            </radialGradient>
-            <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#5a3b78"/><stop offset="100%" stop-color="#2e1a48"/>
-            </linearGradient>
-            <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#6b4790"/><stop offset="100%" stop-color="#3d2857"/>
-            </linearGradient>
-            <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#f7e3a8"/><stop offset="50%" stop-color="#e8b54d"/><stop offset="100%" stop-color="#c99a30"/>
-            </linearGradient>
-          </defs>
-          <!-- aura -->
-          <ellipse cx="170" cy="150" rx="160" ry="140" fill="url(#glow)"/>
-          <!-- tampa aberta -->
-          <path d="M70 120 Q170 60 270 120 L270 140 Q170 95 70 140 Z" fill="url(#lid)" stroke="#7c3aed" stroke-width="2"/>
-          <!-- corpo do baú -->
-          <rect x="70" y="135" width="200" height="105" rx="12" fill="url(#wood)" stroke="#7c3aed" stroke-width="2"/>
-          <!-- aros dourados -->
-          <rect x="70" y="135" width="200" height="105" rx="12" fill="none" stroke="url(#gold)" stroke-width="3" opacity=".5"/>
-          <rect x="158" y="135" width="24" height="105" fill="#3d2857" stroke="url(#gold)" stroke-width="2"/>
-          <circle cx="170" cy="185" r="9" fill="url(#gold)"/>
-          <!-- moedas/tesouro saindo -->
-          <g fill="url(#gold)">
-            <circle cx="120" cy="138" r="9"/><circle cx="150" cy="130" r="8"/>
-            <circle cx="195" cy="132" r="9"/><circle cx="220" cy="140" r="8"/>
-            <circle cx="135" cy="146" r="6"/><circle cx="210" cy="148" r="6"/>
-          </g>
-          <!-- armas cruzadas saindo do baú -->
-          <g stroke="url(#gold)" stroke-width="6" stroke-linecap="round" opacity=".9">
-            <line x1="110" y1="120" x2="235" y2="40"/>
-            <line x1="235" y1="120" x2="110" y2="40"/>
-          </g>
-          <!-- caveirinha -->
-          <g transform="translate(155,95)" fill="#f1e9fb">
-            <circle cx="15" cy="12" r="13"/>
-            <circle cx="10" cy="11" r="3.2" fill="#2e1a48"/><circle cx="20" cy="11" r="3.2" fill="#2e1a48"/>
-            <rect x="11" y="20" width="8" height="6" rx="2"/>
-          </g>
-        </svg>
+        <img class="coin" src="img/hero-treasure.png" alt="Baú de tesouro pirata com skins de CS2" width="520" height="520" />
       </div>
     </div>
   </section>
@@ -146,10 +102,17 @@
   <script src="js/site.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      // categorias
+      // categorias (ícones ilustrados)
+      var catImg = {
+        "facas": "cat-facas", "luvas": "cat-luvas", "rifles": "cat-rifles", "pistolas": "cat-pistolas",
+        "smgs": "cat-smgs", "snipers": "cat-snipers", "heavy": "cat-heavy", "outros/agent": "cat-agentes"
+      };
       document.getElementById("cats").innerHTML = PIRATA.D.categorias.map(function (c) {
+        var ico = catImg[c.slug]
+          ? '<img class="ico-img" src="img/' + catImg[c.slug] + '.png" alt="' + c.nome + '" loading="lazy" />'
+          : '<div class="ico">' + c.icone + '</div>';
         return '<a class="cat" href="catalogo.html?cat=' + encodeURIComponent(c.slug) + '">' +
-          '<div class="ico">' + c.icone + '</div><div class="nm">' + c.nome + '</div></a>';
+          ico + '<div class="nm">' + c.nome + '</div></a>';
       }).join("");
       // skins reais à venda (inventário do storeSteamId)
       fetch("/api/store?limit=10", { credentials: "same-origin" })
