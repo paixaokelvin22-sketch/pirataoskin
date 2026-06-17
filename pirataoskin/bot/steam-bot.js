@@ -132,12 +132,14 @@ class SteamBot extends EventEmitter {
     });
 
     client.on("webSession", (sessionID, cookies) => {
+      this._cookies = cookies; // usados p/ ler trade holds autenticados
       manager.setCookies(cookies, (err) => {
         if (err) { this.lastError = err.message; this.emit("status", this.status()); return; }
         community.setCookies(cookies);
         this.mode = "live";
         this.online = true;
         this.lastError = null;
+        this._holdsCache = null; this._holdsCacheTs = 0; // invalida cache ao relogar
         console.log("[bot] modo REAL ativo. SteamID:", this.steamid);
         this.emit("status", this.status());
       });
@@ -234,35 +236,34 @@ class SteamBot extends EventEmitter {
      Best-effort: qualquer falha resolve {} sem quebrar quem chama.
   */
   async getTradeHolds() {
-    if (this.mode !== "live" || !this._lib || !this._lib.manager || !this.steamid) return {};
-    // cache de 5 min
+    if (this.mode !== "live" || !this._cookies || !this.steamid) return {};
     const now = Date.now();
     if (this._holdsCache && now - this._holdsCacheTs < 5 * 60 * 1000) return this._holdsCache;
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; this._holdsCache = v; this._holdsCacheTs = now; resolve(v); } };
-      const to = setTimeout(() => finish(this._holdsCache || {}), 12000);
-      try {
-        this._lib.manager.getInventoryContents(730, 2, false, (err, inv) => {
-          clearTimeout(to);
-          if (err || !Array.isArray(inv)) return finish({});
-          const holds = {};
-          for (const item of inv) {
-            // item.tradable===false e tem data em owner_descriptions
-            const descs = item.owner_descriptions || item.descriptions || [];
-            for (const d of descs) {
-              const m = d && d.value && d.value.match(/Tradable After\s+(.+?)\s*\(?GMT\)?$/i);
-              if (m) {
-                const t = Date.parse(m[1].replace(/[()]/g, "").trim() + " GMT");
-                if (!isNaN(t)) holds[String(item.assetid)] = t;
-                break;
-              }
-            }
+    try {
+      // inventario AUTENTICADO (com cookies do bot) traz owner_descriptions com "Tradable After"
+      const url = "https://steamcommunity.com/inventory/" + this.steamid + "/" + APPID_CS2 + "/" + CONTEXTID + "?l=english&count=2000";
+      const r = await fetch(url, { headers: { Cookie: this._cookies.join("; "), "User-Agent": "Mozilla/5.0 PIRATAOSKIN" } });
+      if (!r.ok) return this._holdsCache || {};
+      const d = await r.json();
+      if (!d || !d.assets || !d.descriptions) return {};
+      const desc = {};
+      for (const x of d.descriptions) desc[x.classid + "_" + x.instanceid] = x;
+      const holds = {};
+      for (const a of d.assets) {
+        const x = desc[a.classid + "_" + a.instanceid];
+        if (!x || !x.owner_descriptions) continue;
+        for (const o of x.owner_descriptions) {
+          const m = o && o.value && o.value.match(/[Tt]radable[ /]?[Aa]fter\s+(.+)/);
+          if (m) {
+            const t = Date.parse(m[1].replace(/[()]/g, " ").replace(/GMT/i, "").trim() + " GMT");
+            if (!isNaN(t)) holds[String(a.assetid)] = t;
+            break;
           }
-          finish(holds);
-        });
-      } catch (e) { clearTimeout(to); finish({}); }
-    });
+        }
+      }
+      this._holdsCache = holds; this._holdsCacheTs = now;
+      return holds;
+    } catch (e) { return this._holdsCache || {}; }
   }
 }
 
