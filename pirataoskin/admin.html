@@ -296,6 +296,7 @@
       details += sec("Tipo", '<span class="ocard-type ' + typeCls + '">' + typeLabel + '</span>' + (isSell ? " — Usuário vende para a loja" : " — Usuário compra da loja"));
       details += sec("Valor total", '<span style="font-size:1.1rem;font-weight:700;color:var(--gold)">' + brl(o.total || 0) + '</span>' + (o.market ? ' <span style="color:var(--text-muted);font-size:.8rem">(mercado: ' + brl(o.market) + ')</span>' : ''));
       details += sec("Status", statusPill(o.status) + (o.tradeState ? ' · trade: ' + esc(o.tradeState) : '') + (o.tradeError ? ' · <span style="color:var(--ruby)">' + esc(o.tradeError) + '</span>' : ''));
+      if (o.needsMobileConfirm) details += sec("Ação necessária", '<span style="color:var(--gold)">📱 Confirme esta oferta no app Steam (Steam Guard) para o comprador recebê-la.</span>');
 
       if (o.tradeUrl) {
         details += sec("Trade URL", '<a href="' + esc(o.tradeUrl) + '" target="_blank" style="word-break:break-all">' + esc(o.tradeUrl) + '</a>');

@@ -164,8 +164,10 @@ async function deliverPaidOrder(order) {
     order.offerId = r.offerId;
     order.status = "trade_sent";
     order.tradeState = r.state;
+    order.needsMobileConfirm = !!r.needsMobileConfirm; // sem identity_secret: confirmar no app
     saveDB();
-    console.log("[bot] entrega enviada do pedido", order.id, "oferta", r.offerId);
+    console.log("[bot] entrega enviada do pedido", order.id, "oferta", r.offerId,
+      r.needsMobileConfirm ? "(CONFIRMAR no app Steam)" : "");
   } catch (e) {
     order.status = "delivery_failed";
     order.deliveryError = e.message;

@@ -207,12 +207,19 @@ class SteamBot extends EventEmitter {
       if (message) offer.setMessage(message);
       offer.send((err, status) => {
         if (err) return reject(err);
-        // se precisar de confirmação móvel (ofertas em que damos itens), confirmamos
+        // ofertas em que DAMOS itens precisam de confirmação móvel
         if (status === "pending" && kind === "give") {
-          community.acceptConfirmationForObject(this.cfg.identitySecret, offer.id, (cErr) => {
-            if (cErr) return reject(cErr);
-            resolve({ offerId: String(offer.id), state: "sent", status });
-          });
+          if (this.cfg.identitySecret) {
+            // confirma automaticamente (Nível B)
+            community.acceptConfirmationForObject(this.cfg.identitySecret, offer.id, (cErr) => {
+              // se a confirmação automática falhar, a oferta JÁ foi enviada —
+              // não é falha de entrega; cai p/ confirmação manual no app
+              resolve({ offerId: String(offer.id), state: "sent", status, needsMobileConfirm: !!cErr });
+            });
+          } else {
+            // sem identity_secret (Nível A): oferta criada, requer confirmação manual no app Steam
+            resolve({ offerId: String(offer.id), state: "sent", status, needsMobileConfirm: true });
+          }
         } else {
           resolve({ offerId: String(offer.id), state: "sent", status });
         }
