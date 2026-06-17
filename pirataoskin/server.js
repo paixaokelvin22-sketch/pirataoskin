@@ -382,32 +382,30 @@ app.get("/api/store", async (req, res) => {
   try {
     const inv = await fetchInventory(STORE_STEAMID);
     if (inv.error) return res.json(inv);
-    const marketable = inv.items.filter((i) => i.marketable);
-    // anexa preco (do cache) a TODOS os itens
-    const withPrice = marketable.map((i) => {
+    // datas de trade hold reais (so com bot logado; {} caso contrario)
+    let holds = {};
+    try { holds = (await bot.getTradeHolds()) || {}; } catch (e) {}
+    const heldIds = new Set(Object.keys(holds));
+    // exibe no catalogo: skins a venda (marketable) + skins em trade lock (bloqueadas)
+    const display = inv.items.filter((i) => i.marketable || heldIds.has(String(i.assetid)));
+    const withPrice = display.map((i) => {
       const c = priceCache[i.market_hash_name];
       const price = c && c.price != null ? Math.round(c.price * STORE_MARKUP * 100) / 100 : null;
-      return { ...i, id: i.assetid, price }; // id = assetid (chave usada nos cards/carrinho)
+      const locked = heldIds.has(String(i.assetid)) || i.tradable === false;
+      return {
+        ...i, id: i.assetid, price,
+        tradable: locked ? false : i.tradable,
+        tradableAfter: holds[i.assetid] || undefined,
+      };
     });
-    // ordena SEMPRE do mais caro p/ o mais barato (itens sem preco ficam por ultimo)
+    // ordena do mais caro p/ o mais barato (sem preco por ultimo)
     withPrice.sort((a, b) => {
       if (a.price == null && b.price == null) return 0;
       if (a.price == null) return 1;
       if (b.price == null) return -1;
       return b.price - a.price;
     });
-    const out = withPrice.slice(0, limit);
-    // enriquece com data de liberacao do trade lock (so com bot logado; best-effort)
-    try {
-      const holds = await bot.getTradeHolds();
-      if (holds && Object.keys(holds).length) {
-        for (const it of out) if (holds[it.assetid]) {
-          it.tradableAfter = holds[it.assetid];
-          it.tradable = false; // em trade lock -> badge/contador + bloqueia compra
-        }
-      }
-    } catch (e) { /* sem holds, segue sem contador */ }
-    res.json({ items: out, count: marketable.length });
+    res.json({ items: withPrice.slice(0, limit), count: display.length, locked: heldIds.size });
   } catch (e) { res.status(502).json({ error: "falha_steam", detail: e.message, items: [] }); }
 });
 
@@ -694,6 +692,14 @@ app.post("/api/admin/bot/guardcode", requireAdmin, (req, res) => {
   if (!code) return res.status(400).json({ error: "sem_codigo" });
   const result = bot.submitGuardCode(code);
   res.json(result);
+});
+// diagnostico: o que o bot enxerga de trade holds (skins bloqueadas)
+app.get("/api/admin/bot/holds", requireAdmin, async (req, res) => {
+  try {
+    const holds = (await bot.getTradeHolds()) || {};
+    const list = Object.entries(holds).map(([assetid, ms]) => ({ assetid, until: new Date(ms).toISOString() }));
+    res.json({ mode: bot.status().mode, count: list.length, holds: list.slice(0, 50) });
+  } catch (e) { res.status(502).json({ error: e.message, mode: bot.status().mode }); }
 });
 // liberar pagamento de uma venda (após confirmar recebimento da skin)
 app.post("/api/admin/orders/:id/payout", requireAdmin, (req, res) => {
