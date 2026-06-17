@@ -110,7 +110,7 @@
     host.innerHTML = `
     <header class="header">
       <div class="wrap header-inner">
-        <a class="logo display" href="index.html">${skullSVG}<span>PIRATAOSKIN</span></a>
+        <a class="logo display" href="index.html"><img src="img/logo.png" alt="PIRATAOSKIN" class="logo-img" /></a>
         <nav class="nav">${nav}</nav>
         <form class="search" onsubmit="return PIRATA.goSearch(event)">
           ${searchSVG}<input type="search" name="q" placeholder="Buscar skin, arma, coleção..." />
@@ -138,7 +138,7 @@
     <footer class="footer">
       <div class="wrap footer-inner">
         <div class="brand">
-          <a class="logo display" href="index.html">${skullSVG}<span>PIRATAOSKIN</span></a>
+          <a class="logo display" href="index.html"><img src="img/logo.png" alt="PIRATAOSKIN" class="logo-img" style="max-height:64px" /></a>
           <p>O baú de skins de CS2 com preço de pirata. Comprar, vender e dar upgrade no seu inventário, com entrega automática via trade na Steam.</p>
           <div class="pays">
             <span class="pay">PIX</span><span class="pay">VISA</span><span class="pay">MASTERCARD</span><span class="pay">ELO</span>
@@ -367,11 +367,166 @@
     storeCardHTML, renderStore, registerStoreItem, cartContains,
   };
 
+  /* ---------- Papagaio do Capitão (chatbot pirata) ---------- */
+  const WHATSAPP = "5551995426032";
+  // base de conhecimento: cada regra tem palavras-chave e resposta pirata
+  const botKB = [
+    { k: ["ola","olá","oi","eai","e ai","salve","bom dia","boa tarde","boa noite","hello"],
+      a: "Arrr, avante marujo! 🦜 Aqui é o Papagaio do Capitão. Pergunta o que quiseres sobre o tesouro: comprar, vender, pagamento, entrega, segurança..." },
+    { k: ["comprar","compra","como compro","adquirir"],
+      a: "Pra fisgar uma skin: escolhe no <b>Mercado</b> ⚓, joga no carrinho e paga no Pix. Assim que o ouro cai, o bot dispara a trade na tua Steam na hora! 🪙" },
+    { k: ["vender","venda","vender minhas","quero vender"],
+      a: "Pra largar tuas skins no nosso porão: vai em <b>Contrabando</b> 🪙, conecta teu inventário, escolhe as peças e informa tua chave Pix. O bot pede a trade e o ouro cai após recebermos as skins! 💰" },
+    { k: ["pagamento","pagar","pix","cartao","cartão","parcelar","parcela","12x","boleto"],
+      a: "Aceitamos <b>Pix</b> (aprovação na hora ⚡) e <b>cartão em até 12x</b> 💳. Sem mistério, marujo!" },
+    { k: ["entrega","receber","quando","prazo","demora","quanto tempo"],
+      a: "A entrega é <b>automática e instantânea</b> via trade na Steam assim que o pagamento é confirmado. Rapidinho que nem corsário! ⚡🏴‍☠️" },
+    { k: ["trade url","tradeurl","trade","link de troca","url"],
+      a: "Tua <b>Trade URL</b> tu pegas na Steam em: Inventário → Trade Offers → 'Who can send me Trade Offers?'. Cola ela no carrinho que o bote faz o resto! 🚢" },
+    { k: ["seguro","seguranca","segurança","confiavel","confiável","golpe","roubo","medo"],
+      a: "Águas tranquilas, marujo! 🛡️ Usamos um <b>bot de escrow</b>: o ouro só é liberado depois que a skin troca de mãos de verdade. Ninguém fica a ver navios." },
+    { k: ["upgrade","trocar por","melhorar skin","troca de skin"],
+      a: "No <b>Trocas</b> 🔄 tu dás tuas skins de entrada (vale 85% do mercado) e pagas só a diferença pra subir pra uma skin melhor. Sobe de nível no arsenal! ⚔️" },
+    { k: ["taxa","desconto","comissao","comissão","quanto fica","margem"],
+      a: "Nos preços de pirata o que tu vês é o que paga 🪙. Na venda, tu recebes 85% do valor de mercado da peça." },
+    { k: ["historico","histórico","meus pedidos","minhas compras","diario","diário"],
+      a: "Teu <b>Diário de Bordo</b> 📖 guarda todas as tuas compras, vendas e o ouro movimentado. Tá no menu lá em cima!" },
+    { k: ["obrigado","valeu","brigado","obg","tks","thanks"],
+      a: "Arrr, é um prazer servir! 🦜 Que os ventos te levem a bons tesouros, marujo!" },
+    { k: ["steam","login","entrar","logar","conta"],
+      a: "Pra entrar, clica em <b>Entrar com Steam</b> ⚓ no topo. É login oficial da Steam, sem senha passando por aqui!" },
+  ];
+
+  function botReply(text) {
+    const t = (" " + text.toLowerCase() + " ").replace(/[.,!?]/g, " ");
+    for (const rule of botKB) {
+      if (rule.k.some((kw) => t.includes(kw))) return { found: true, msg: rule.a };
+    }
+    return { found: false, msg: "Arrr... essa nem o velho Capitão sabe responder! 🤔 <b>Queres um atendimento personalizado</b> com a tripulação de verdade?" };
+  }
+
+  function initChatbot() {
+    if (document.getElementById("pirata-chat")) return;
+    const wrap = document.createElement("div");
+    wrap.id = "pirata-chat";
+    wrap.innerHTML = `
+      <button class="pc-fab" id="pc-fab" aria-label="Abrir chat">🦜<span class="pc-dot"></span></button>
+      <div class="pc-box" id="pc-box" role="dialog" aria-label="Papagaio do Capitão">
+        <div class="pc-head">
+          <span class="pc-av">🦜</span>
+          <div><b>Papagaio do Capitão</b><i>IA da tripulação · online</i></div>
+          <button class="pc-x" id="pc-x" aria-label="Fechar">✕</button>
+        </div>
+        <div class="pc-msgs" id="pc-msgs"></div>
+        <div class="pc-quick" id="pc-quick"></div>
+        <form class="pc-input" id="pc-form">
+          <input id="pc-text" autocomplete="off" placeholder="Pergunta ao papagaio, marujo..." />
+          <button type="submit" aria-label="Enviar">➤</button>
+        </form>
+      </div>`;
+    document.body.appendChild(wrap);
+
+    const box = wrap.querySelector("#pc-box");
+    const msgs = wrap.querySelector("#pc-msgs");
+    const quick = wrap.querySelector("#pc-quick");
+    let greeted = false, pendingHandoff = false;
+
+    function add(side, html) {
+      const m = document.createElement("div");
+      m.className = "pc-msg " + side;
+      m.innerHTML = html;
+      msgs.appendChild(m);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    function botSay(html, delay) {
+      const typing = document.createElement("div");
+      typing.className = "pc-msg bot pc-typing";
+      typing.innerHTML = "<span></span><span></span><span></span>";
+      msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
+      setTimeout(() => { typing.remove(); add("bot", html); }, delay || 650);
+    }
+    function whatsappLink() {
+      const txt = encodeURIComponent("Ahoy! Vim do site PIRATAOSKIN e quero um atendimento personalizado, marujo. 🏴‍☠️");
+      return "https://wa.me/" + WHATSAPP + "?text=" + txt;
+    }
+    function offerHandoff() {
+      pendingHandoff = true;
+      quick.innerHTML =
+        '<button data-yes>✅ Sim, falar no WhatsApp</button>' +
+        '<button data-no>Não, continuar aqui</button>';
+      quick.querySelector("[data-yes]").onclick = () => {
+        add("me", "Sim, quero atendimento personalizado");
+        botSay("Içar velas pro WhatsApp! 🦜 Te levando pra falar com a tripulação...", 500);
+        setTimeout(() => window.open(whatsappLink(), "_blank"), 900);
+        quick.innerHTML = ""; pendingHandoff = false;
+      };
+      quick.querySelector("[data-no]").onclick = () => {
+        add("me", "Não, continuar aqui");
+        botSay("Beleza, marujo! Manda outra pergunta que eu tento desvendar. 🗺️", 400);
+        quick.innerHTML = ""; pendingHandoff = false;
+      };
+    }
+    function renderQuick() {
+      if (pendingHandoff) return;
+      const opts = ["Como comprar?", "Como vender?", "Formas de pagamento", "É seguro?"];
+      quick.innerHTML = opts.map((o) => '<button data-q="' + o + '">' + o + "</button>").join("");
+      quick.querySelectorAll("[data-q]").forEach((b) => {
+        b.onclick = () => handleUser(b.dataset.q);
+      });
+    }
+    function handleUser(text) {
+      add("me", text.replace(/</g, "&lt;"));
+      quick.innerHTML = "";
+      const r = botReply(text);
+      botSay(r.msg, 700);
+      if (!r.found) setTimeout(offerHandoff, 800);
+      else setTimeout(renderQuick, 800);
+    }
+
+    function openChat() {
+      box.classList.add("open");
+      wrap.querySelector("#pc-fab").classList.add("hide");
+      if (!greeted) {
+        greeted = true;
+        botSay("Arrr, avante marujo! 🦜 Eu sou o <b>Papagaio do Capitão</b>, a IA dessa nau. Pergunta o que quiseres sobre comprar, vender, pagamento ou entrega de skins!", 400);
+        setTimeout(renderQuick, 1100);
+      }
+    }
+    function closeChat() {
+      box.classList.remove("open");
+      wrap.querySelector("#pc-fab").classList.remove("hide");
+    }
+
+    wrap.querySelector("#pc-fab").onclick = openChat;
+    wrap.querySelector("#pc-x").onclick = closeChat;
+    wrap.querySelector("#pc-form").onsubmit = (e) => {
+      e.preventDefault();
+      const inp = wrap.querySelector("#pc-text");
+      const v = inp.value.trim();
+      if (!v) return;
+      inp.value = "";
+      handleUser(v);
+    };
+
+    // abre sozinho ao rolar a página (uma vez), com alô pirata
+    let autoOpened = false;
+    function onScroll() {
+      if (autoOpened) return;
+      if (window.scrollY > 500) {
+        autoOpened = true;
+        window.removeEventListener("scroll", onScroll);
+        openChat();
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     renderHeader();
     renderFooter();
     updateCartBadge();
     refreshAuth();
+    initChatbot();
     // feedback pós-login
     const p = new URLSearchParams(location.search).get("login");
     if (p === "ok") toast("⚓ Login com Steam realizado!");
