@@ -399,7 +399,10 @@ app.get("/api/store", async (req, res) => {
     try {
       const holds = await bot.getTradeHolds();
       if (holds && Object.keys(holds).length) {
-        for (const it of out) if (holds[it.assetid]) it.tradableAfter = holds[it.assetid];
+        for (const it of out) if (holds[it.assetid]) {
+          it.tradableAfter = holds[it.assetid];
+          it.tradable = false; // em trade lock -> badge/contador + bloqueia compra
+        }
       }
     } catch (e) { /* sem holds, segue sem contador */ }
     res.json({ items: out, count: marketable.length });
