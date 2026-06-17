@@ -227,6 +227,43 @@ class SteamBot extends EventEmitter {
       });
     });
   }
+
+  /* ---------- trade holds (datas de liberação reais) ----------
+     Só funciona em modo LIVE: lê o inventário próprio autenticado, cujas
+     descrições incluem a data "Tradable After". Retorna { assetid: ms }.
+     Best-effort: qualquer falha resolve {} sem quebrar quem chama.
+  */
+  async getTradeHolds() {
+    if (this.mode !== "live" || !this._lib || !this._lib.manager || !this.steamid) return {};
+    // cache de 5 min
+    const now = Date.now();
+    if (this._holdsCache && now - this._holdsCacheTs < 5 * 60 * 1000) return this._holdsCache;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; this._holdsCache = v; this._holdsCacheTs = now; resolve(v); } };
+      const to = setTimeout(() => finish(this._holdsCache || {}), 12000);
+      try {
+        this._lib.manager.getInventoryContents(730, 2, false, (err, inv) => {
+          clearTimeout(to);
+          if (err || !Array.isArray(inv)) return finish({});
+          const holds = {};
+          for (const item of inv) {
+            // item.tradable===false e tem data em owner_descriptions
+            const descs = item.owner_descriptions || item.descriptions || [];
+            for (const d of descs) {
+              const m = d && d.value && d.value.match(/Tradable After\s+(.+?)\s*\(?GMT\)?$/i);
+              if (m) {
+                const t = Date.parse(m[1].replace(/[()]/g, "").trim() + " GMT");
+                if (!isNaN(t)) holds[String(item.assetid)] = t;
+                break;
+              }
+            }
+          }
+          finish(holds);
+        });
+      } catch (e) { clearTimeout(to); finish({}); }
+    });
+  }
 }
 
 module.exports = { SteamBot };

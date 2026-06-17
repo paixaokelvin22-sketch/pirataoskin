@@ -394,7 +394,15 @@ app.get("/api/store", async (req, res) => {
       if (b.price == null) return -1;
       return b.price - a.price;
     });
-    res.json({ items: withPrice.slice(0, limit), count: marketable.length });
+    const out = withPrice.slice(0, limit);
+    // enriquece com data de liberacao do trade lock (so com bot logado; best-effort)
+    try {
+      const holds = await bot.getTradeHolds();
+      if (holds && Object.keys(holds).length) {
+        for (const it of out) if (holds[it.assetid]) it.tradableAfter = holds[it.assetid];
+      }
+    } catch (e) { /* sem holds, segue sem contador */ }
+    res.json({ items: out, count: marketable.length });
   } catch (e) { res.status(502).json({ error: "falha_steam", detail: e.message, items: [] }); }
 });
 

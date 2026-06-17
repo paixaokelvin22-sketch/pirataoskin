@@ -288,15 +288,36 @@
   }
 
   // Card de item REAL à venda na loja (inventário do admin), com preço de mercado.
+  // formata tempo restante (ms) -> "2d 5h", "5h 12m", "12m 30s"
+  function fmtCountdown(ms) {
+    if (ms <= 0) return "liberada!";
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600),
+          m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d > 0) return d + "d " + h + "h";
+    if (h > 0) return h + "h " + m + "m";
+    if (m > 0) return m + "m " + sec + "s";
+    return sec + "s";
+  }
+
   function storeCardHTML(it) {
     const cor = it.rarityColor || "#5E98D9";
+    const locked = it.tradable === false;
+    const lockUntil = it.tradableAfter ? Number(it.tradableAfter) : null;
     const priceHtml = it.price != null
       ? brl(it.price)
       : '<span style="color:var(--text-muted);font-size:.82rem">cotando…</span>';
+    let lockBadge = "";
+    if (locked) {
+      lockBadge = lockUntil
+        ? `<span class="lockbadge" data-lock-until="${lockUntil}">🔒 <b>${fmtCountdown(lockUntil - Date.now())}</b></span>`
+        : `<span class="lockbadge">🔒 Trade lock</span>`;
+    }
     return `
-    <div class="card" style="border-top-color:${cor}">
+    <div class="card${locked ? " is-locked" : ""}" style="border-top-color:${cor}">
       <div class="thumb" style="background:radial-gradient(circle at 50% 35%, ${cor}55, transparent 60%), linear-gradient(135deg,#0e1a28,#1b2c40)">
         ${it.rarity ? `<span class="badge" style="color:${cor}">${it.rarity}</span>` : ""}
+        ${lockBadge}
         ${it.image ? `<img class="skinimg" src="${it.image}" alt="${it.name}" loading="lazy" />` : `<span class="wpn">${it.name}</span>`}
       </div>
       <div class="body">
@@ -304,10 +325,28 @@
         <span class="wearline">${it.wear || it.type || "—"}</span>
         <div class="pricerow">
           <span class="price tnum" data-price-for="${it.id}">${priceHtml}</span>
-          <button class="btn btn-gold btn-sm" data-buy="${it.id}">Comprar</button>
+          ${locked
+            ? `<button class="btn btn-soft btn-sm" disabled title="Em trade lock na Steam">🔒</button>`
+            : `<button class="btn btn-gold btn-sm" data-buy="${it.id}">Comprar</button>`}
         </div>
       </div>
     </div>`;
+  }
+
+  // atualiza todos os contadores de trade lock a cada segundo
+  let _lockTimer = null;
+  function startLockTimers() {
+    if (_lockTimer) return;
+    _lockTimer = setInterval(() => {
+      const els = document.querySelectorAll("[data-lock-until]");
+      if (!els.length) return;
+      els.forEach((el) => {
+        const ms = Number(el.dataset.lockUntil) - Date.now();
+        const b = el.querySelector("b");
+        if (b) b.textContent = fmtCountdown(ms);
+        if (ms <= 0) el.classList.add("freed");
+      });
+    }, 1000);
   }
 
   function renderStore(target, items) {
@@ -319,6 +358,7 @@
       b.addEventListener("click", () => addToCart(b.dataset.buy))
     );
     fillStorePrices(el, items);
+    startLockTimers();
   }
 
   // Coteja preços faltantes em série (respeita o rate limit do Steam Market).
